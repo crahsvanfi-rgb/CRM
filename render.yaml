@@ -1,0 +1,25 @@
+﻿services:
+  - type: web
+    runtime: node
+    name: crm-importadoras-backend
+    repo: https://github.com/crahsvanfi-rgb/CRM
+    branch: main
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: AI_ENCRYPTION_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: ZERNIO_API_KEY
+        sync: false
