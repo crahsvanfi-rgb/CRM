@@ -1,0 +1,97 @@
+import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsEmail } from 'class-validator';
+import { Transform } from 'class-transformer';
+
+export enum LeadStatus {
+  NUEVO = 'NUEVO',
+  CONTACTADO = 'CONTACTADO',
+  INTERESADO = 'INTERESADO',
+  COTIZACION = 'COTIZACION',
+  NEGOCIACION = 'NEGOCIACION',
+  GANADO = 'GANADO',
+  PERDIDO = 'PERDIDO',
+}
+
+export class CreateLeadDto {
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  nombre?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  companyName?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  empresa?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  telefono?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  ciudad?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  city?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  fuente?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  source?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  productoInteres?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  observaciones?: string;
+
+  @IsEnum(LeadStatus)
+  @IsOptional()
+  estado?: LeadStatus;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  motivoPerdida?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsDateString()
+  @IsOptional()
+  proximoSeguimiento?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsOptional()
+  vendedorId?: string;
+}

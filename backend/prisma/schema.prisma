@@ -1,0 +1,1485 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------
+// Enums
+// ------------------------------------------------------
+enum LeadStatus {
+  NUEVO
+  CONTACTADO
+  INTERESADO
+  COTIZACION
+  NEGOCIACION
+  GANADO
+  PERDIDO
+}
+
+enum LeadTouchpointCanal {
+  LLAMADA
+  WHATSAPP
+  EMAIL
+  REUNION
+  FORMULARIO
+  OTRO
+}
+
+enum LeadStage {
+  PROSPECTO
+  CONTACTO_INICIAL
+  DEMO
+  COTIZACION_ENVIADA
+  NEGOCIACION
+  GANADO
+  PERDIDO
+}
+
+enum ActivityType {
+  LLAMADA
+  WHATSAPP
+  EMAIL
+  REUNION
+  SEGUIMIENTO
+  TAREA
+  OTRO
+}
+
+enum ActivityStatus {
+  PENDIENTE
+  COMPLETADA
+  CANCELADA
+}
+
+enum CustomerType {
+  MAYORISTA
+  MINORISTA
+  DISTRIBUIDOR
+  VIP
+  NUEVO
+  RECURRENTE
+  INACTIVO
+}
+
+enum CustomerStatus {
+  ACTIVO
+  INACTIVO
+}
+
+enum ProductStatus {
+  ACTIVO
+  INACTIVO
+}
+
+// ------------------------------------------------------
+
+enum MovementType {
+  ENTRADA_IMPORTACION
+  SALIDA_VENTA
+  RESERVA
+  LIBERACION_RESERVA
+  AJUSTE_POSITIVO
+  AJUSTE_NEGATIVO
+  DEVOLUCION
+}
+
+enum QuoteStatus {
+  BORRADOR
+  ENVIADA
+  ACEPTADA
+  RECHAZADA
+  VENCIDA
+}
+
+enum OrderStatus {
+  PENDIENTE
+  CONFIRMADO
+  ENTREGADO
+  CANCELADO
+}
+
+enum ImportationStatus {
+  PLANIFICADA
+  ORDENADA
+  EN_PRODUCCION
+  EMBARCADA
+  EN_TRANSITO
+  ADUANA
+  RECIBIDA
+  CERRADA
+}
+
+// 1. Core / Multitenancy
+// ------------------------------------------------------
+model Tenant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  domain    String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                User[]
+  roles                Role[]
+  customers            Customer[]
+  customerNotes        CustomerNote[]
+  customerActivities   CustomerActivity[]
+  leads                Lead[]
+  leadActivities       LeadActivity[]
+  categories           Category[]
+  products             Product[]
+  quotes               Quote[]
+  orders               Order[]
+  suppliers            Supplier[]
+  importations         Importation[]
+  auditLogs            AuditLog[]
+  warehouses           Warehouse[]
+  inventoryMovements   InventoryMovement[]
+  productStocks        ProductStock[]
+  agendaActivities     Activity[]
+  aiConfiguration      AIConfiguration?
+  aiMessages           AIMessage[]
+  aiUsages             AIUsage[]
+  recommendations      Recommendation[]
+  automations          Automation[]
+  automationExecutions AutomationExecution[]
+  channelConnections   ChannelConnection[]
+  conversations        Conversation[]
+  messages             Message[]
+  messageAttachments   MessageAttachment[]
+  chatbotConfigs       ChatbotConfiguration[]
+  campaigns            Campaign[]
+  campaignRecipients   CampaignRecipient[]
+  segments             Segment[]
+  campaignTemplates    CampaignTemplate[]
+  campaignMessages     CampaignMessage[]
+  campaignConfig       CampaignConfig?
+  consents             Consent[]
+  optOuts              OptOut[]
+  campaignCosts        CampaignCost[]
+  campaignExecutions   CampaignExecution[]
+  campaignEvents       CampaignEvent[]
+  leadTouchpoints      LeadTouchpoint[]
+}
+
+// ------------------------------------------------------
+// 2. Usuarios y Roles (RBAC)
+// ------------------------------------------------------
+model User {
+  id        String   @id @db.Uuid // Referencia a Supabase Auth UID
+  email     String   @unique
+  name      String?
+  tenantId  String   @db.Uuid
+  roleId    String   @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true)
+
+  tenant                Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role                  Role                @relation(fields: [roleId], references: [id])
+  auditLogs             AuditLog[]
+  leads                 Lead[]
+  customers             Customer[]
+  leadActivities        LeadActivity[]
+  customerNotes         CustomerNote[]
+  customerActivities    CustomerActivity[]
+  inventoryMovements    InventoryMovement[]
+  quotes                Quote[]
+  orders                Order[]
+  agendaActivities      Activity[]
+  aiUsages              AIUsage[]
+  aiMessages            AIMessage[]
+  conversationsAsAsesor Conversation[]      @relation("AsesorRelation")
+  conversationsTomadas  Conversation[]      @relation("TomadoPorRelation")
+  campaignsResponsable  Campaign[]          @relation("CampaignResponsable")
+  campaignsObjetivo     Campaign[]          @relation("CampaignVendedorObjetivo")
+  optOutsCreados        OptOut[]
+}
+
+model Role {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String @db.Uuid
+  name        String // Ej: "Admin", "Vendedor", "Gerente"
+  permissions Json // Matriz de permisos (RBAC/ABAC)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users  User[]
+
+  @@unique([tenantId, name])
+}
+
+// ------------------------------------------------------
+// 3. Ventas (Leads, Customers, Quotes)
+// ------------------------------------------------------
+model Lead {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String     @db.Uuid
+  leadId             String? // Autogenerado "LEAD-001"
+  name               String
+  companyName        String?
+  email              String?
+  phone              String?
+  ciudad             String?
+  fuente             String?
+  productoInteres    String?
+  observaciones      String?
+  estado             LeadStatus @default(NUEVO)
+  motivoPerdida      String?
+  proximoSeguimiento DateTime?
+  vendedorId         String?    @db.Uuid
+  activo             Boolean    @default(true) // Soft delete
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendedor          User?               @relation(fields: [vendedorId], references: [id])
+  activities        LeadActivity[]
+  customer          Customer?
+  agendaActivities  Activity[]
+  Conversation      Conversation[]
+  CampaignRecipient CampaignRecipient[]
+
+  campaignRecipientsGenerados CampaignRecipient[] @relation("LeadGenerado")
+  consents                    Consent[]
+  touchpoints                 LeadTouchpoint[]
+
+  @@index([tenantId])
+  @@index([estado])
+}
+
+model LeadActivity {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String       @db.Uuid
+  leadId      String       @db.Uuid
+  usuarioId   String       @db.Uuid
+  tipo        ActivityType
+  descripcion String
+  fecha       DateTime     @default(now())
+  completada  Boolean      @default(false)
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead    Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  usuario User   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+model LeadTouchpoint {
+  id                    String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String              @db.Uuid
+  leadId                String              @db.Uuid
+  canal                 LeadTouchpointCanal
+  fecha                 DateTime            @default(now())
+  participanteInterno   String?
+  participanteExterno   String?
+  resumen               String?             @db.Text
+  objeciones            String?             @db.Text
+  puntosInteres         String?             @db.Text
+  preferenciasContacto  String?
+  materialEnviado       Json?
+  materialAbierto       Boolean             @default(false)
+  respuestaMaterial     String?
+  etapa                 LeadStage           @default(PROSPECTO)
+  compromisosPendientes String?             @db.Text
+  fechaRecontacto       DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([leadId])
+}
+
+model Customer {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String         @db.Uuid
+  leadId          String?        @unique @db.Uuid
+  vendedorId      String?        @db.Uuid
+  razonSocial     String?
+  nombreComercial String
+  nitCi           String?
+  personaContacto String?
+  telefono        String?
+  whatsapp        String?
+  email           String?
+  direccion       String?
+  ciudad          String?
+  departamento    String?
+  tipoCliente     CustomerType   @default(NUEVO)
+  estado          CustomerStatus @default(ACTIVO)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lead              Lead?               @relation(fields: [leadId], references: [id])
+  vendedor          User?               @relation(fields: [vendedorId], references: [id])
+  quotes            Quote[]
+  orders            Order[]
+  notes             CustomerNote[]
+  activities        CustomerActivity[]
+  agendaActivities  Activity[]
+  Recommendation    Recommendation[]
+  Conversation      Conversation[]
+  CampaignRecipient CampaignRecipient[]
+
+  campaignRecipientsVinculados CampaignRecipient[] @relation("ClienteVinculado")
+  consents                     Consent[]
+
+  @@index([tenantId])
+  @@index([estado])
+}
+
+model CustomerNote {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String   @db.Uuid
+  customerId String   @db.Uuid
+  usuarioId  String   @db.Uuid
+  nota       String
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  usuario  User     @relation(fields: [usuarioId], references: [id])
+}
+
+model CustomerActivity {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String       @db.Uuid
+  customerId  String       @db.Uuid
+  usuarioId   String       @db.Uuid
+  tipo        ActivityType
+  descripcion String
+  fecha       DateTime     @default(now())
+  completada  Boolean      @default(false)
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  usuario  User     @relation(fields: [usuarioId], references: [id])
+}
+
+model Quote {
+  id               String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String      @db.Uuid
+  numero           String
+  clienteId        String      @db.Uuid
+  vendedorId       String      @db.Uuid
+  fecha            DateTime    @default(now())
+  fechaVencimiento DateTime?
+  moneda           String      @default("USD")
+  subtotal         Decimal     @db.Decimal(10, 2)
+  descuento        Decimal     @default(0) @db.Decimal(10, 2)
+  impuestos        Decimal     @default(0) @db.Decimal(10, 2)
+  total            Decimal     @db.Decimal(10, 2)
+  estado           QuoteStatus @default(BORRADOR)
+  observaciones    String?
+  condiciones      String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cliente  Customer    @relation(fields: [clienteId], references: [id])
+  vendedor User        @relation(fields: [vendedorId], references: [id])
+  items    QuoteItem[]
+  orders   Order[]
+
+  campaignRecipientsGenerados CampaignRecipient[] @relation("CotizacionGenerada")
+
+  @@unique([tenantId, numero])
+  @@index([tenantId])
+  @@index([clienteId])
+  @@index([estado])
+}
+
+model QuoteItem {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String  @db.Uuid
+  quoteId        String  @db.Uuid
+  productId      String  @db.Uuid
+  cantidad       Int
+  precioUnitario Decimal @db.Decimal(10, 2)
+  descuento      Decimal @default(0) @db.Decimal(10, 2)
+  total          Decimal @db.Decimal(10, 2)
+
+  quote   Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@index([quoteId])
+}
+
+// ------------------------------------------------------
+// 4. Catálogo e Inventario
+// ------------------------------------------------------
+
+model Category {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @db.Uuid
+  nombre      String
+  descripcion String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@index([tenantId])
+}
+
+model Product {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String        @db.Uuid
+  sku             String
+  codigoInterno   String?
+  nombre          String
+  descripcion     String?
+  categoriaId     String?       @db.Uuid
+  marca           String?
+  unidad          String?
+  precioVenta     Decimal       @db.Decimal(10, 2)
+  costoBase       Decimal?      @db.Decimal(10, 2)
+  stockMinimo     Int           @default(0)
+  estado          ProductStatus @default(ACTIVO)
+  imagenUrl       String?
+  codigoProveedor String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categoria          Category?           @relation(fields: [categoriaId], references: [id])
+  quoteItems         QuoteItem[]
+  orderItems         OrderItem[]
+  importationItems   ImportationItem[]
+  inventoryMovements InventoryMovement[]
+  productStock       ProductStock?
+
+  campaignsObjetivo         Campaign[]          @relation("CampaignProductoObjetivo")
+  campaignRecipientsInteres CampaignRecipient[] @relation("RecipientProductoInteres")
+
+  @@unique([tenantId, sku])
+  @@index([tenantId])
+  @@index([sku])
+  @@index([categoriaId])
+}
+
+// ------------------------------------------------------
+// 5. Pedidos y Logística (Importaciones)
+// ------------------------------------------------------
+model Order {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String      @db.Uuid
+  quoteId       String?     @db.Uuid
+  clienteId     String      @db.Uuid
+  vendedorId    String      @db.Uuid
+  numero        String
+  fecha         DateTime    @default(now())
+  fechaEsperada DateTime?
+  total         Decimal     @db.Decimal(10, 2)
+  estado        OrderStatus @default(PENDIENTE)
+  observaciones String?
+  activo        Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  quote    Quote?      @relation(fields: [quoteId], references: [id])
+  cliente  Customer    @relation(fields: [clienteId], references: [id])
+  vendedor User        @relation(fields: [vendedorId], references: [id])
+  items    OrderItem[]
+
+  campaignRecipientsGenerados CampaignRecipient[] @relation("PedidoGenerado")
+
+  @@unique([tenantId, numero])
+  @@index([tenantId])
+  @@index([clienteId])
+  @@index([estado])
+}
+
+model OrderItem {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String  @db.Uuid
+  orderId        String  @db.Uuid
+  productId      String  @db.Uuid
+  cantidad       Int
+  precioUnitario Decimal @db.Decimal(10, 2)
+  descuento      Decimal @default(0) @db.Decimal(10, 2)
+  total          Decimal @db.Decimal(10, 2)
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([tenantId])
+  @@index([orderId])
+}
+
+model Supplier {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @db.Uuid
+  nombre    String
+  pais      String?
+  contacto  String?
+  email     String?
+  telefono  String?
+  direccion String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  importations Importation[]
+
+  @@index([tenantId])
+  @@index([nombre])
+}
+
+model Importation {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String            @db.Uuid
+  codigo           String
+  proveedorId      String            @db.Uuid
+  paisOrigen       String?
+  fechaCompra      DateTime?
+  fechaSalida      DateTime?
+  eta              DateTime?
+  fechaLlegadaReal DateTime?
+  medioTransporte  String?
+  numeroContenedor String?
+  referencia       String?
+  estado           ImportationStatus @default(PLANIFICADA)
+  observaciones    String?
+  activo           Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  proveedor Supplier          @relation(fields: [proveedorId], references: [id], onDelete: Restrict)
+  items     ImportationItem[]
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId])
+  @@index([estado])
+}
+
+model ImportationItem {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String  @db.Uuid
+  importationId String  @db.Uuid
+  productId     String  @db.Uuid
+  cantidad      Int
+  costoUnitario Decimal @default(0.00) @db.Decimal(10, 2)
+  total         Decimal @default(0.00) @db.Decimal(10, 2)
+
+  importation Importation @relation(fields: [importationId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([importationId])
+}
+
+// ------------------------------------------------------
+// 6. Agente IA y Auditoría
+// ------------------------------------------------------
+model AuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @db.Uuid
+  userId    String   @db.Uuid
+  action    String // Ej: "AI_QUERY", "DELETE_LEAD"
+  details   Json? // Detalles del log
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+}
+
+// ------------------------------------------------------
+// 7. Inventario y Almacenes
+// ------------------------------------------------------
+model Warehouse {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @db.Uuid
+  nombre    String
+  direccion String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  movements InventoryMovement[]
+
+  @@index([tenantId])
+}
+
+model ProductStock {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String   @db.Uuid
+  productId      String   @unique @db.Uuid
+  stockFisico    Int      @default(0)
+  stockReservado Int      @default(0)
+  stockTransito  Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, productId])
+}
+
+model InventoryMovement {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String       @db.Uuid
+  productId      String       @db.Uuid
+  warehouseId    String?      @db.Uuid
+  tipo           MovementType
+  cantidad       Int
+  stockAnterior  Int
+  stockPosterior Int
+  motivo         String?
+  documentoRef   String?
+  usuarioId      String       @db.Uuid
+  createdAt      DateTime     @default(now())
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product   Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+  usuario   User       @relation(fields: [usuarioId], references: [id])
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([tipo])
+}
+
+// ------------------------------------------------------
+// 8. Agenda y Actividades
+// ------------------------------------------------------
+model Activity {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String         @db.Uuid
+  tipo            ActivityType
+  titulo          String
+  descripcion     String?
+  fecha           DateTime
+  hora            String?
+  responsableId   String         @db.Uuid
+  clienteId       String?        @db.Uuid
+  leadId          String?        @db.Uuid
+  estado          ActivityStatus @default(PENDIENTE)
+  fechaCompletada DateTime?
+  notificar       Boolean        @default(false)
+  notificadaEn    DateTime?
+  activo          Boolean        @default(true) // For soft delete
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  responsable User      @relation(fields: [responsableId], references: [id])
+  cliente     Customer? @relation(fields: [clienteId], references: [id])
+  lead        Lead?     @relation(fields: [leadId], references: [id])
+
+  campaignRecipientsVinculados CampaignRecipient[] @relation("ActividadGenerada")
+
+  @@index([tenantId])
+  @@index([responsableId])
+  @@index([fecha])
+  @@index([estado])
+}
+
+// ------------------------------------------------------
+// 9. IA y LLM (Fase 3.5)
+enum AIRole {
+  user
+  assistant
+  system
+}
+
+enum AIConfigStatus {
+  ACTIVA
+  INACTIVA
+  MANTENIMIENTO
+}
+
+// ------------------------------------------------------
+model AIConfiguration {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @unique @db.Uuid
+  habilitada   Boolean  @default(true)
+  provider     String   @default("openrouter")
+  apiKey       String
+  defaultModel String   @default("openai/gpt-4o-mini")
+  maxTokens    Int      @default(1000)
+  temperature  Decimal  @default(0.7) @db.Decimal(3, 2)
+  systemPrompt String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model AIMessage {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @db.Uuid
+  usuarioId String?  @db.Uuid
+  role      String // user, assistant, system
+  content   String
+  tokens    Int?
+  createdAt DateTime @default(now())
+
+  tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario User?  @relation(fields: [usuarioId], references: [id])
+
+  @@index([tenantId])
+}
+
+enum AIOperationType {
+  CHAT
+  FUNCTION_CALLING
+  RECOMENDACION
+  AUTOMATIZACION
+  TRADUCCION
+  OTRO
+}
+
+model AIUsage {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String          @db.Uuid
+  usuarioId      String?         @db.Uuid
+  agente         String
+  modelo         String
+  tipoOperacion  AIOperationType
+  conversationId String?         @db.Uuid
+
+  promptTokens     Int @default(0)
+  completionTokens Int @default(0)
+  totalTokens      Int @default(0)
+
+  costoEntrada          Decimal  @default(0) @db.Decimal(10, 6)
+  costoSalida           Decimal  @default(0) @db.Decimal(10, 6)
+  costoTotal            Decimal  @default(0) @db.Decimal(10, 6)
+  precioEntradaPorToken Decimal? @db.Decimal(12, 10)
+  precioSalidaPorToken  Decimal? @db.Decimal(12, 10)
+
+  fecha     DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usuario      User?         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([usuarioId])
+  @@index([fecha])
+  @@index([agente])
+  @@index([conversationId])
+}
+
+// ------------------------------------------------------
+// 10. Recomendaciones y Automatizaciones (Fase 3.6 y 3.7)
+// ------------------------------------------------------
+
+enum RecommendationType {
+  UPSELL
+  CROSSSELL
+  NEXT_BEST_ACTION
+  CHURN_RISK
+  CLIENTE_INACTIVO
+  COTIZACION_SIN_RESPUESTA
+  PRODUCTO_BAJO_STOCK
+  POTENCIAL_RECOMPRA
+  ACTIVIDAD_VENCIDA
+  PEDIDO_ATRASADO
+}
+
+enum RecommendationStatus {
+  NUEVA
+  PENDIENTE
+  VISTA
+  APLICADA
+  RESUELTA
+  DESCARTADA
+}
+
+enum Severity {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+model Recommendation {
+  id            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String               @db.Uuid
+  clienteId     String?              @db.Uuid
+  leadId        String?              @db.Uuid
+  tipo          RecommendationType
+  titulo        String
+  descripcion   String
+  score         Decimal              @db.Decimal(5, 4)
+  estado        RecommendationStatus @default(NUEVA)
+  severidad     Severity             @default(MEDIA)
+  accionUrl     String?
+  aplicada      Boolean              @default(false)
+  fechaCreacion DateTime             @default(now())
+  createdAt     DateTime             @default(now())
+
+  tenant  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cliente Customer? @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([clienteId])
+}
+
+enum AutomationEvent {
+  LEAD_CREADO
+  NUEVO_PEDIDO
+  NUEVA_COTIZACION
+  COTIZACION_SIN_RESPUESTA
+  STOCK_BAJO
+  PEDIDO_ATRASADO
+  CLIENTE_INACTIVO
+  ACTIVIDAD_VENCIDA
+}
+
+enum AutomationAction {
+  CREAR_ACTIVIDAD
+  GENERAR_ALERTA
+  ENVIAR_NOTIFICACION
+  ASIGNAR_ASESOR
+}
+
+model Automation {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String           @db.Uuid
+  nombre        String
+  descripcion   String?
+  activo        Boolean          @default(true)
+  evento        AutomationEvent
+  condiciones   Json?
+  accion        AutomationAction
+  configuracion Json
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  tenant     Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  executions AutomationExecution[]
+
+  @@index([tenantId])
+}
+
+enum ExecutionStatus {
+  EXITOSO
+  ERROR
+}
+
+model AutomationExecution {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String          @db.Uuid
+  automationId   String          @db.Uuid
+  entidadRef     String?
+  estado         ExecutionStatus
+  resultado      String?
+  errorMensaje   String?
+  fechaEjecucion DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([automationId])
+  @@index([estado])
+}
+
+// ------------------------------------------------------
+// 11. Canales Externos / Zenior (Fase 3.8)
+// ------------------------------------------------------
+
+enum ExternalChannel {
+  ZERNIO
+  ZENIOR_FACEBOOK
+  ZENIOR_INSTAGRAM
+  WHATSAPP
+  WEB
+  INTERNO
+}
+
+enum MessageDirection {
+  ENTRANTE
+  SALIENTE
+}
+
+enum MessageStatus {
+  PENDIENTE
+  ENVIADO
+  ERROR
+}
+
+enum ConversationStatus {
+  NO_LEIDA
+  ABIERTA
+  PENDIENTE
+  CERRADA
+}
+
+enum SenderType {
+  CLIENTE
+  BOT
+  HUMANO
+}
+
+enum MessageContentType {
+  TEXTO
+  IMAGEN
+  DOCUMENTO
+  AUDIO
+  VIDEO
+}
+
+enum ConversationMode {
+  IA
+  HUMANO
+}
+
+enum TranscriptionStatus {
+  PENDIENTE
+  COMPLETADA
+  ERROR
+  NO_REQUERIDA
+}
+
+model ChannelConnection {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String          @db.Uuid
+  canal      ExternalChannel
+  habilitado Boolean         @default(false)
+  configJson Json?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, canal])
+  @@index([tenantId])
+}
+
+model Conversation {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String             @db.Uuid
+  canal              ExternalChannel
+  contactoId         String
+  nombreContacto     String?
+  avatarUrl          String?
+  estado             ConversationStatus @default(NO_LEIDA)
+  asesorId           String?            @db.Uuid
+  clienteId          String?            @db.Uuid
+  leadId             String?            @db.Uuid
+  ultimoMensaje      String?
+  fechaUltimoMensaje DateTime?
+  modo               ConversationMode   @default(IA)
+  tomadoPorId        String?            @db.Uuid
+  fechaToma          DateTime?
+  fechaDevolucion    DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  asesor    User?     @relation(name: "AsesorRelation", fields: [asesorId], references: [id])
+  tomadoPor User?     @relation(name: "TomadoPorRelation", fields: [tomadoPorId], references: [id])
+  cliente   Customer? @relation(fields: [clienteId], references: [id])
+  lead      Lead?     @relation(fields: [leadId], references: [id])
+  messages  Message[]
+  aiUsages  AIUsage[]
+
+  @@unique([tenantId, canal, contactoId])
+  @@index([tenantId])
+  @@index([estado])
+  @@index([asesorId])
+}
+
+model Message {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String              @db.Uuid
+  conversationId      String              @db.Uuid
+  senderType          SenderType
+  direction           MessageDirection
+  messageType         MessageContentType  @default(TEXTO)
+  content             String?
+  mediaUrl            String?
+  status              MessageStatus       @default(PENDIENTE)
+  mensajeExternoId    String?
+  errorMensaje        String?
+  leido               Boolean             @default(false)
+  transcription       String?
+  transcripcionEstado TranscriptionStatus @default(NO_REQUERIDA)
+  duracionSegundos    Int?
+  fechaEnvio          DateTime            @default(now())
+  createdAt           DateTime            @default(now())
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+
+  @@index([tenantId])
+  @@index([conversationId])
+  @@index([status])
+}
+
+model MessageAttachment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @db.Uuid
+  messageId String   @db.Uuid
+  tipo      String // imagen, documento, audio, video
+  url       String
+  nombre    String?
+  createdAt DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+// ------------------------------------------------------
+// 12. Configuración de Chatbot (Fase 3.9)
+// ------------------------------------------------------
+model ChatbotConfiguration {
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                 String   @unique @db.Uuid
+  nombre                   String   @default("Asistente")
+  activo                   Boolean  @default(false)
+  promptSistema            String
+  personalidad             String?
+  tono                     String   @default("profesional")
+  idioma                   String   @default("es")
+  mensajeInicial           String
+  horarioAtencion          Json?
+  mensajeFueraHorario      String
+  reglasComerciales        String?
+  informacionInstitucional String?
+  instruccionesProhibidas  String?
+  nivelCreatividad         Decimal  @default(0.3) @db.Decimal(3, 2)
+  modeloOpenRouter         String   @default("openai/gpt-4o-mini")
+  permisos                 Json
+  transferirHumano         Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// ------------------------------------------------------
+// 13. Marketing: Campañas y Segmentos (Fase 4)
+// ------------------------------------------------------
+
+enum CampaignType {
+  MANUAL
+  AUTOMATICA_RECUPERACION
+  AUTOMATICA_PRODUCTO
+  AUTOMATICA_VENDEDOR
+  EVENTO
+}
+
+enum CampaignTrigger {
+  CLIENTE_INACTIVO
+  NUEVO_PRODUCTO
+  IMPORTACION_RECIBIDA
+  COTIZACION_SIN_RESPUESTA
+}
+
+enum Priority {
+  ALTA
+  MEDIA
+  BAJA
+}
+
+enum CampaignChannel {
+  WHATSAPP
+  EMAIL
+  SMS
+}
+
+enum CampaignObjective {
+  VENTAS
+  RETENCION
+  INFORMATIVO
+}
+
+enum CampaignStatus {
+  BORRADOR
+  PROGRAMADA
+  ENVIANDO
+  PAUSADA
+  CANCELADA
+  COMPLETADA
+}
+
+enum RecipientStatus {
+  PENDIENTE
+  ENVIADO
+  FALLIDO
+  RESPONDIDO
+}
+
+enum SegmentType {
+  CLIENTES
+  LEADS
+  MIXTO
+}
+
+model CampaignTemplate {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @db.Uuid
+  nombre    String
+  categoria String?
+  cuerpo    String
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+  messages  CampaignMessage[]
+
+  @@index([tenantId])
+}
+
+model Campaign {
+  id                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String            @db.Uuid
+  nombre               String
+  descripcion          String?
+  canal                CampaignChannel
+  objetivo             CampaignObjective
+  responsableId        String            @db.Uuid
+  estado               CampaignStatus    @default(BORRADOR)
+  plantillaId          String?           @db.Uuid
+  mensajePersonalizado String?
+  enviarConIA          Boolean           @default(false)
+  aprobada             Boolean           @default(false)
+  fechaCreacion        DateTime          @default(now())
+  fechaProgramada      DateTime?
+  fechaEnvioProgramado DateTime?
+  configuracionCola    Json?
+
+  limiteMensajesPorHora  Int?
+  intervaloEntreEnviosMs Int     @default(1000)
+  concurrencia           Int     @default(1)
+  maxReintentos          Int     @default(3)
+  pausada                Boolean @default(false)
+
+  totalDestinatarios Int @default(0)
+  totalEnviados      Int @default(0)
+  totalEntregados    Int @default(0)
+  totalFallidos      Int @default(0)
+  totalRespuestas    Int @default(0)
+  totalLeads         Int @default(0)
+  totalLeadsGenerados Int @default(0)
+  totalCotizaciones  Int @default(0)
+  totalVentas        Int @default(0)
+
+  totalActividadesGeneradas Int @default(0)
+  totalClientesVinculados   Int @default(0)
+  costoTotal                Decimal @default(0) @db.Decimal(10, 4)
+
+  tipo               CampaignType     @default(MANUAL)
+  eventoDisparador   CampaignTrigger?
+  productoId         String?          @db.Uuid
+  vendedorObjetivoId String?          @db.Uuid
+  segmentoId         String?          @db.Uuid
+  ultimaEjecucion    DateTime?
+  activaAutomatica   Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  responsable User                @relation("CampaignResponsable", fields: [responsableId], references: [id], onDelete: Restrict)
+  plantilla   CampaignTemplate?   @relation(fields: [plantillaId], references: [id], onDelete: SetNull)
+  segmento    Segment?            @relation(fields: [segmentoId], references: [id], onDelete: SetNull)
+  recipients  CampaignRecipient[]
+  messages    CampaignMessage[]
+  costs       CampaignCost[]
+  executions  CampaignExecution[]
+  events      CampaignEvent[]
+
+  productoObjetivo Product? @relation("CampaignProductoObjetivo", fields: [productoId], references: [id])
+  vendedorObjetivo User?    @relation("CampaignVendedorObjetivo", fields: [vendedorObjetivoId], references: [id])
+
+  @@index([tenantId])
+  @@index([estado])
+}
+
+model CampaignRecipient {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String          @db.Uuid
+  campaignId String          @db.Uuid
+  clienteId  String?         @db.Uuid
+  leadId     String?         @db.Uuid
+  estado     RecipientStatus @default(PENDIENTE)
+  motivo     String?
+
+  respondio            Boolean   @default(false)
+  fechaRespuesta       DateTime?
+  leadGeneradoId       String?   @db.Uuid
+  cotizacionGeneradaId String?   @db.Uuid
+  pedidoGeneradoId     String?   @db.Uuid
+
+  clienteVinculadoId  String? @db.Uuid
+  actividadGeneradaId String? @db.Uuid
+
+  prioridad         Priority?
+  productoInteresId String?   @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  cliente  Customer?         @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  lead     Lead?             @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  messages CampaignMessage[]
+  events   CampaignEvent[]
+
+  clienteVinculado   Customer? @relation("ClienteVinculado", fields: [clienteVinculadoId], references: [id])
+  actividadGenerada  Activity? @relation("ActividadGenerada", fields: [actividadGeneradaId], references: [id])
+  leadGenerado       Lead?     @relation("LeadGenerado", fields: [leadGeneradoId], references: [id])
+  cotizacionGenerada Quote?    @relation("CotizacionGenerada", fields: [cotizacionGeneradaId], references: [id])
+  pedidoGenerado     Order?    @relation("PedidoGenerado", fields: [pedidoGeneradoId], references: [id])
+
+  productoInteres Product? @relation("RecipientProductoInteres", fields: [productoInteresId], references: [id])
+
+  @@unique([campaignId, clienteId])
+  @@unique([campaignId, leadId])
+  @@index([tenantId])
+  @@index([campaignId])
+}
+
+model Segment {
+  id           String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String      @db.Uuid
+  nombre       String
+  descripcion  String?
+  tipoSegmento SegmentType
+  condiciones  Json
+
+  esSegmentoDinamico Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@index([tenantId])
+}
+
+enum CampaignMessageStatus {
+  PENDIENTE
+  PROCESANDO
+  ENVIADO
+  ENTREGADO
+  FALLIDO
+}
+
+model CampaignMessage {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String                @db.Uuid
+  campaignId   String                @db.Uuid
+  recipientId  String                @db.Uuid
+  plantillaId  String?               @db.Uuid
+  contenido    String
+  estado       CampaignMessageStatus @default(PENDIENTE)
+  externalId   String?
+  errorMensaje String?
+  intentos     Int                   @default(0)
+  fechaEnvio   DateTime?
+
+  fechaEntregado DateTime?
+  fechaFallido   DateTime?
+  fechaRespuesta DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign  Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient CampaignRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  plantilla CampaignTemplate? @relation(fields: [plantillaId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@index([estado])
+}
+
+// ------------------------------------------------------
+// 14. Marketing: Configuración, Consentimiento, Exclusión y Costos (Fase 4.21 - 4.24)
+// ------------------------------------------------------
+
+enum ContactType {
+  CUSTOMER
+  LEAD
+  EXTERNO
+}
+
+enum ConsentStatus {
+  CONSENTIDO
+  NO_CONSENTIDO
+  PENDIENTE
+}
+
+model CampaignConfig {
+  id                      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String   @unique @db.Uuid
+  campanasActivas         Boolean  @default(true)
+  zeniorConfigurado       Boolean  @default(false)
+  limiteMensajesPorDia    Int?     @default(1000)
+  limiteMensajesPorHora   Int?     @default(100)
+  intervaloEntreEnviosMs  Int      @default(1000)
+  horarioPermitidoInicio  String?  @default("09:00")
+  horarioPermitidoFin     String?  @default("19:00")
+  costoPorMensajeWhatsapp Decimal? @default(0.05) @db.Decimal(10, 4)
+  costoPorMensajeSms      Decimal? @default(0.02) @db.Decimal(10, 4)
+  firma                   String?
+  mensajePredeterminado    String?
+  aprobacionObligatoria   Boolean  @default(true)
+  permiteAutomatizaciones Boolean  @default(true)
+  iaHabilitada            Boolean  @default(false)
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model Consent {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String        @db.Uuid
+  contactoId           String
+  tipoContacto         ContactType
+  estado               ConsentStatus @default(PENDIENTE)
+  canal                String?       @default("WHATSAPP")
+  origen               String?
+  ipOrigen             String?
+  observaciones        String?
+  fechaConsentimiento  DateTime?
+  fuenteConsentimiento String?
+  fechaCambio          DateTime      @default(now())
+  customerId           String?       @db.Uuid
+  leadId               String?       @db.Uuid
+
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  lead     Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@unique([tenantId, contactoId, tipoContacto])
+}
+
+model OptOut {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String      @db.Uuid
+  contactoId     String
+  tipoContacto   ContactType
+  telefono       String?
+  motivo         String?
+  fechaExclusion DateTime    @default(now())
+  creadoPorId    String?     @db.Uuid
+
+  createdAt      DateTime    @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creadoPor User?  @relation(fields: [creadoPorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@unique([tenantId, contactoId, tipoContacto])
+}
+
+model CampaignCost {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId         String    @db.Uuid
+  campaignId       String    @db.Uuid
+  canal            String?   @default("WHATSAPP")
+  costoUnitario    Decimal?  @default(0.05) @db.Decimal(10, 4)
+  cantidadMensajes Int?      @default(0)
+  costoTotal       Decimal?  @default(0.00) @db.Decimal(10, 4)
+  fechaRegistro    DateTime? @default(now())
+  moneda           String?   @default("USD")
+  mensajesEnviados Int       @default(0)
+  mensajesFallidos Int       @default(0)
+  consumo          Decimal   @default(0) @db.Decimal(10, 4)
+  costoEstimado    Decimal   @default(0) @db.Decimal(10, 4)
+  proveedor        String?
+  fecha            DateTime  @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([campaignId])
+}
+
+enum CampaignExecutionStatus {
+  INICIADA
+  COMPLETADA
+  FALLIDA
+}
+
+model CampaignExecution {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String                  @db.Uuid
+  campaignId         String                  @db.Uuid
+  estado             CampaignExecutionStatus @default(INICIADA)
+  fechaInicio        DateTime                @default(now())
+  fechaFin           DateTime?
+  totalDestinatarios Int                     @default(0)
+  totalEnviados      Int                     @default(0)
+  totalFallidos      Int                     @default(0)
+  errorMensaje       String?
+  createdAt          DateTime                @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([campaignId])
+}
+
+enum CampaignEventType {
+  APERTURA
+  CLIC
+  RESPUESTA
+  REBOTE
+  OPT_OUT
+}
+
+model CampaignEvent {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String            @db.Uuid
+  campaignId  String            @db.Uuid
+  recipientId String?           @db.Uuid
+  tipoEvento  CampaignEventType
+  detalles    Json?
+  fechaEvento DateTime          @default(now())
+  createdAt   DateTime          @default(now())
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign  Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipient CampaignRecipient? @relation(fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@index([recipientId])
+}
+
+
