@@ -166,6 +166,52 @@ export class AiChatService {
       }
     });
 
+    const lowerContent = contenido.toLowerCase();
+    const asksActivities = /reuni|agenda|actividad|seguimiento|calendario/.test(lowerContent);
+    const asksLeads = /lead|embudo|prospect|pron[oó]stico|perdid/.test(lowerContent);
+    if (asksActivities || asksLeads) {
+      const parts: string[] = [];
+      if (asksActivities) {
+        const actividades: any = await this.aiToolsService.executeTool('getActivities', {}, tenantId, roleName, usuarioId);
+        const items = Array.isArray(actividades?.actividades) ? actividades.actividades : Array.isArray(actividades) ? actividades : [];
+        if (items.length === 0) {
+          parts.push('No tienes reuniones o actividades pendientes registradas.');
+        } else {
+          const resumen = items.slice(0, 5).map((a: any) => `${a.titulo || a.title || a.tipo || 'Actividad'}${a.fechaInicio || a.fecha ? ` (${new Date(a.fechaInicio || a.fecha).toLocaleString('es-BO')})` : ''}`).join('; ');
+          parts.push(`Actividades encontradas: ${resumen}.`);
+        }
+      }
+      if (asksLeads) {
+        const embudo: any = await this.aiToolsService.executeTool('getLeadFunnel', {}, tenantId, roleName, usuarioId);
+        const rows = Array.isArray(embudo?.embudo) ? embudo.embudo : [];
+        const total = rows.reduce((acc: number, row: any) => acc + Number(row.cantidad || 0), 0);
+        const detalle = rows.map((row: any) => `${row.etapa}: ${row.cantidad}`).join(', ');
+        parts.push(`Hay ${total} leads activos${detalle ? ` (${detalle})` : ''}.`);
+      }
+      const finalResponse = parts.join(' ');
+
+      await tenantClient.message.create({
+        data: {
+          tenantId,
+          conversationId,
+          senderType: 'BOT',
+          direction: 'SALIENTE',
+          messageType: 'TEXTO',
+          content: finalResponse,
+          status: 'ENVIADO',
+        }
+      });
+
+      await tenantClient.conversation.update({
+        where: { id: conversationId },
+        data: {
+          ultimoMensaje: finalResponse.substring(0, 100),
+          fechaUltimoMensaje: new Date(),
+        }
+      });
+
+      return { respuesta: finalResponse, tokens: 0 };
+    }
     // Construir historial para la API
     const messages: any[] = [];
     let promptGeneral = '';
