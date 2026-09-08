@@ -2,15 +2,18 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
   // Habilitar validaciones globales de forma estricta (class-validator)
+  app.useGlobalFilters(new PrismaExceptionFilter());
+
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true, // Remueve datos basura/no definidos en el DTO
-    forbidNonWhitelisted: true, // Lanza error si envían campos no esperados
-    transform: true, // Transforma automáticamente payloads a objetos DTO reales
+    forbidNonWhitelisted: true, // Lanza error si envian campos no esperados
+    transform: true, // Transforma automaticamente payloads a objetos DTO reales
   }));
 
   // Seguridad: Cabeceras HTTP seguras adaptadas para API REST
@@ -19,7 +22,7 @@ async function bootstrap() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
 
-  // Orígenes permitidos (soporta FRONTEND_URL con múltiples URLs separadas por coma)
+  // Origenes permitidos (soporta FRONTEND_URL con multiples URLs separadas por coma)
   const envFrontendUrls = (process.env.FRONTEND_URL || '')
     .split(',')
     .map((url) => url.trim())
@@ -34,7 +37,7 @@ async function bootstrap() {
   ];
 
   app.enableCors({
-    origin: true, // Refleja dinámicamente cualquier origen de Vercel/localhost eliminando bloqueos CORS
+    origin: true, // Refleja dinamicamente cualquier origen de Vercel/localhost eliminando bloqueos CORS
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Origin',
@@ -65,3 +68,4 @@ async function bootstrap() {
   console.log(`Backend CRM server running on http://0.0.0.0:${port}`);
 }
 bootstrap();
+

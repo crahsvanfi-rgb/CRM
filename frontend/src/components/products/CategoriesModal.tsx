@@ -1,10 +1,9 @@
-import { getApiUrl } from '@/lib/api-url';
+import { apiPath } from '@/lib/api-url';
+import { getAuthHeaders } from '@/utils/auth';
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, Trash2, Edit2 } from 'lucide-react';
-import { createClient } from '@/utils/supabase/client';
 
 export default function CategoriesModal({ onClose }: { onClose: () => void }) {
-  const supabase = createClient();
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -15,12 +14,8 @@ export default function CategoriesModal({ onClose }: { onClose: () => void }) {
   const fetchCategories = async () => {
     try {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('${getApiUrl()}/categories', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-          'x-tenant-id': session?.user?.user_metadata?.tenant_id || '00000000-0000-0000-0000-000000000000'
-        }
+      const res = await fetch(apiPath('/categories'), {
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         setCategories(await res.json());
@@ -40,18 +35,13 @@ export default function CategoriesModal({ onClose }: { onClose: () => void }) {
 
     setSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const url = editId 
-        ? `${getApiUrl()}/categories/${editId}`
-        : '${getApiUrl()}/categories';
+        ? apiPath(`/categories/${editId}`)
+        : apiPath('/categories');
         
       await fetch(url, {
         method: editId ? 'PATCH' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-          'x-tenant-id': session?.user?.user_metadata?.tenant_id || '00000000-0000-0000-0000-000000000000'
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(formData),
       });
 
@@ -66,13 +56,9 @@ export default function CategoriesModal({ onClose }: { onClose: () => void }) {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Desactivar esta categoría?')) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch(`${getApiUrl()}/categories/${id}`, {
+      await fetch(apiPath(`/categories/${id}`), {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-          'x-tenant-id': session?.user?.user_metadata?.tenant_id || '00000000-0000-0000-0000-000000000000'
-        },
+        headers: getAuthHeaders(),
       });
       fetchCategories();
     } catch (e) {

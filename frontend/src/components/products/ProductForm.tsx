@@ -1,10 +1,9 @@
-import { getApiUrl } from '@/lib/api-url';
+import { apiPath } from '@/lib/api-url';
+import { getAuthHeaders } from '@/utils/auth';
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, Tag } from 'lucide-react';
-import { createClient } from '@/utils/supabase/client';
 
 export default function ProductForm({ onClose, onSaved, initialData }: { onClose: () => void, onSaved: () => void, initialData?: any }) {
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<any[]>([]);
@@ -25,12 +24,8 @@ export default function ProductForm({ onClose, onSaved, initialData }: { onClose
 
   useEffect(() => {
     const fetchCategories = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('${getApiUrl()}/categories', {
-        headers: {
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-          'x-tenant-id': session?.user?.user_metadata?.tenant_id || '00000000-0000-0000-0000-000000000000'
-        }
+      const res = await fetch(apiPath('/categories'), {
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         setCategories(await res.json());
@@ -45,11 +40,10 @@ export default function ProductForm({ onClose, onSaved, initialData }: { onClose
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const isEditing = !!initialData;
       const url = isEditing 
-        ? `${getApiUrl()}/products/${initialData.id}`
-        : '${getApiUrl()}/products';
+        ? apiPath(`/products/${initialData.id}`)
+        : apiPath('/products');
         
       const payload = {
         ...formData,
@@ -62,11 +56,7 @@ export default function ProductForm({ onClose, onSaved, initialData }: { onClose
 
       const response = await fetch(url, {
         method: isEditing ? 'PATCH' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || ''}`,
-          'x-tenant-id': session?.user?.user_metadata?.tenant_id || '00000000-0000-0000-0000-000000000000'
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
 
