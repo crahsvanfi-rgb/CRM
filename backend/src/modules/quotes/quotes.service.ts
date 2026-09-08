@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { CreateQuoteDto } from './dto/create-quote.dto.js';
 import { UpdateQuoteDto } from './dto/update-quote.dto.js';
 import { QuoteStatus, Prisma, OrderStatus } from '@prisma/client';
-import PdfPrinter from 'pdfmake';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class QuotesService {
@@ -390,67 +390,46 @@ export class QuotesService {
     });
   }
 
-  async generatePdf(tenantId: string, id: string): Promise<any> {
+  async generatePdf(tenantId: string, id: string): Promise<Buffer> {
     const quote = await this.findOne(tenantId, id);
-    
-    // PdfMake setup minimal
-    const fonts = {
-      Roboto: {
-        normal: 'Helvetica',
-        bold: 'Helvetica-Bold',
-        italics: 'Helvetica-Oblique',
-        bolditalics: 'Helvetica-BoldOblique'
-      }
-    };
-    const printer = new (PdfPrinter as any)(fonts);
-
-    const docDefinition = {
-      content: [
-        { text: `Cotización ${quote.numero}`, style: 'header' },
-        { text: `Fecha: ${quote.fecha.toLocaleDateString()}` },
-        { text: `Cliente: ${quote.cliente.nombreComercial || quote.cliente.razonSocial}` },
-        { text: `Vendedor: ${quote.vendedor.name}` },
-        { text: '\n' },
-        {
-          table: {
-            headerRows: 1,
-            widths: ['*', 'auto', 'auto', 'auto', 'auto'],
-            body: [
-              ['Producto', 'Cantidad', 'Precio Unit.', 'Descuento', 'Total'],
-              ...quote.items.map((item: any) => [
-                item.product.nombre,
-                item.cantidad.toString(),
-                item.precioUnitario.toString(),
-                item.descuento.toString(),
-                item.total.toString()
-              ])
-            ]
-          }
-        },
-        { text: '\n' },
-        { text: `Subtotal: ${quote.moneda} ${quote.subtotal}`, alignment: 'right' },
-        { text: `Total: ${quote.moneda} ${quote.total}`, alignment: 'right', style: 'total' },
-        { text: '\nCondiciones:', style: 'subheader' },
-        { text: quote.condiciones || 'N/A' }
-      ],
-      styles: {
-        header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
-        subheader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5] },
-        total: { fontSize: 14, bold: true, margin: [0, 5, 0, 0] }
-      },
-      defaultStyle: { font: 'Roboto' }
-    };
 
     return new Promise((resolve, reject) => {
-      try {
-        const pdfDoc = printer.createPdfKitDocument(docDefinition);
-        let chunks: any[] = [];
-        pdfDoc.on('data', (chunk: any) => chunks.push(chunk));
-        pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-        pdfDoc.end();
-      } catch (e) {
-        reject(e);
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const customerName = quote.cliente?.nombreComercial || quote.cliente?.razonSocial || 'Sin nombre';
+      const vendorName = quote.vendedor?.name || 'Sin vendedor';
+
+      doc.fontSize(18).text(`Cotizacion ${quote.numero}`, { underline: true });
+      doc.moveDown();
+      doc.fontSize(10).text(`Fecha: ${quote.fecha.toLocaleDateString()}`);
+      doc.text(`Cliente: ${customerName}`);
+      doc.text(`Vendedor: ${vendorName}`);
+      doc.moveDown();
+
+      doc.fontSize(12).text('Items', { underline: true });
+      doc.moveDown(0.5);
+      quote.items.forEach((item: any, index: number) => {
+        doc.fontSize(10).text(
+          `${index + 1}. ${item.product?.nombre || 'Producto'} | Cantidad: ${item.cantidad} | Precio: ${quote.moneda} ${Number(item.precioUnitario).toFixed(2)} | Desc.: ${Number(item.descuento || 0).toFixed(2)} | Total: ${quote.moneda} ${Number(item.total).toFixed(2)}`,
+        );
+      });
+
+      doc.moveDown();
+      doc.fontSize(11).text(`Subtotal: ${quote.moneda} ${Number(quote.subtotal).toFixed(2)}`, { align: 'right' });
+      doc.fontSize(13).text(`Total: ${quote.moneda} ${Number(quote.total).toFixed(2)}`, { align: 'right' });
+
+      if (quote.condiciones) {
+        doc.moveDown();
+        doc.fontSize(12).text('Condiciones:', { underline: true });
+        doc.fontSize(10).text(quote.condiciones);
       }
+
+      doc.end();
     });
   }
 }

@@ -4,7 +4,7 @@ import { InventoryService } from '../inventory/inventory.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { UpdateOrderDto } from './dto/update-order.dto.js';
 import { OrderStatus, MovementType, Prisma } from '@prisma/client';
-import PdfPrinter from 'pdfmake';
+import PDFDocument from 'pdfkit';
 
 @Injectable()
 export class OrdersService {
@@ -299,61 +299,45 @@ export class OrdersService {
     });
   }
 
-  async generatePdf(tenantId: string, id: string): Promise<any> {
+  async generatePdf(tenantId: string, id: string): Promise<Buffer> {
     const order = await this.findOne(tenantId, id);
-    
-    const fonts = {
-      Roboto: {
-        normal: 'Helvetica',
-        bold: 'Helvetica-Bold',
-        italics: 'Helvetica-Oblique',
-        bolditalics: 'Helvetica-BoldOblique'
-      }
-    };
-    const printer = new (PdfPrinter as any)(fonts);
 
-    const docDefinition = {
-      content: [
-        { text: `Pedido ${order.numero}`, style: 'header' },
-        { text: `Fecha: ${order.fecha.toLocaleDateString()}` },
-        { text: `Cliente: ${order.cliente?.nombreComercial || order.cliente?.razonSocial || 'Sin nombre'} (${order.cliente?.email || 'Sin email'})` },
-        { text: `Estado: ${order.estado}` },
-        { text: '\n' },
-        {
-          table: {
-            headerRows: 1,
-            widths: ['*', 'auto', 'auto', 'auto'],
-            body: [
-              ['Producto', 'Cantidad', 'Precio Unit.', 'Total'],
-              ...order.items.map((item: any) => [
-                item.product.nombre,
-                item.cantidad.toString(),
-                `$${Number(item.precioUnitario).toFixed(2)}`,
-                `$${Number(item.total).toFixed(2)}`
-              ]),
-              ['', '', 'Total Final', `$${Number(order.total).toFixed(2)}`]
-            ]
-          }
-        },
-        order.observaciones ? { text: `\nObservaciones: ${order.observaciones}` } : {}
-      ],
-      styles: {
-        header: {
-          fontSize: 18,
-          bold: true,
-          margin: [0, 0, 0, 10]
-        }
-      }
-    };
-
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
-    
     return new Promise((resolve, reject) => {
-      const chunks: any[] = [];
-      pdfDoc.on('data', (chunk: any) => chunks.push(chunk));
-      pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-      pdfDoc.on('error', (err: any) => reject(err));
-      pdfDoc.end();
+      const doc = new PDFDocument({ margin: 50 });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const customerName = order.cliente?.nombreComercial || order.cliente?.razonSocial || 'Sin nombre';
+      const customerEmail = order.cliente?.email || 'Sin email';
+
+      doc.fontSize(18).text(`Pedido ${order.numero}`, { underline: true });
+      doc.moveDown();
+      doc.fontSize(10).text(`Fecha: ${order.fecha.toLocaleDateString()}`);
+      doc.text(`Cliente: ${customerName} (${customerEmail})`);
+      doc.text(`Estado: ${order.estado}`);
+      doc.moveDown();
+
+      doc.fontSize(12).text('Items', { underline: true });
+      doc.moveDown(0.5);
+      order.items.forEach((item: any, index: number) => {
+        doc.fontSize(10).text(
+          `${index + 1}. ${item.product?.nombre || 'Producto'} | Cantidad: ${item.cantidad} | Precio: ${Number(item.precioUnitario).toFixed(2)} | Total: ${Number(item.total).toFixed(2)}`,
+        );
+      });
+
+      doc.moveDown();
+      doc.fontSize(13).text(`Total final: ${Number(order.total).toFixed(2)}`, { align: 'right' });
+
+      if (order.observaciones) {
+        doc.moveDown();
+        doc.fontSize(12).text('Observaciones:', { underline: true });
+        doc.fontSize(10).text(order.observaciones);
+      }
+
+      doc.end();
     });
   }
 }
