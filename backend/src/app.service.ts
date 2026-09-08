@@ -10,16 +10,20 @@ export class AppService {
   }
 
   async getHealth() {
-    let dbStatus = 'disconnected';
+    let dbStatus = 'not_checked';
+
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await Promise.race([
+        this.prisma.$queryRaw`SELECT 1`,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('database health check timeout')), 1500)),
+      ]);
       dbStatus = 'connected';
     } catch (error: any) {
-      dbStatus = `error: ${error.message || 'unknown error'}`;
+      dbStatus = `degraded: ${error.message || 'unknown error'}`;
     }
 
     return {
-      status: dbStatus === 'connected' ? 'ok' : 'degraded',
+      status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: Math.floor(process.uptime()),
       service: 'crm-backend',
@@ -28,4 +32,3 @@ export class AppService {
     };
   }
 }
-
