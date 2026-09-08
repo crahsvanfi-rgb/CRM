@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ExportCsvButton from '../components/ExportCsvButton';
+import { apiPath } from '@/lib/api-url';
 
 export default function ReportDetailPage() {
   const { reportId } = useParams();
@@ -25,7 +26,7 @@ export default function ReportDetailPage() {
       const token = localStorage.getItem('supabase_token') || '';
       const tenantId = localStorage.getItem('tenant_id') || '';
       
-      let url = `/api/reports/${reportId}`;
+      let url = apiPath(`/reports/${reportId}`);
       if (!isNoDateReport) {
         url += `?fechaInicio=${fechaInicio}T00:00:00.000Z&fechaFin=${fechaFin}T23:59:59.999Z`;
       }

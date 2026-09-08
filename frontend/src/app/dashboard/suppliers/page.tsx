@@ -37,7 +37,7 @@ export default function SuppliersPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingId ? `/api/suppliers/${editingId}` : '/api/suppliers';
+      const url = editingId ? apiPath(`/suppliers/${editingId}`) : apiPath('/suppliers');
       const method = editingId ? 'PATCH' : 'POST';
       const res = await fetch(url, {
         method,

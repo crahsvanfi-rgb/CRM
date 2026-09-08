@@ -55,7 +55,7 @@ export default function AutomationsPage() {
       const token = localStorage.getItem('supabase_token') || '';
       const tenantId = localStorage.getItem('tenant_id') || '';
 
-      const url = editingId ? `/api/automations/${editingId}` : '/api/automations';
+      const url = editingId ? apiPath(`/automations/${editingId}`) : apiPath('/automations');
       const method = editingId ? 'PATCH' : 'POST';
 
       const payload = {
