@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { CreateLeadDto, LeadStatus } from './dto/create-lead.dto.js';
+import { CreateLeadDto, LeadStatus, LeadEtapaVenta } from './dto/create-lead.dto.js';
 import { UpdateLeadDto } from './dto/update-lead.dto.js';
 import { CreateLeadTouchpointDto } from './dto/create-touchpoint.dto.js';
 import { UpdateLeadTouchpointDto } from './dto/update-touchpoint.dto.js';
@@ -56,10 +56,12 @@ export class LeadsService {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
     const tenantClient = this.prisma.getTenantClient(effectiveTenantId);
 
-    // Normalizar campos español/inglés
     const name = (createLeadDto.name || createLeadDto.nombre || '').trim();
     if (!name) {
       throw new BadRequestException('El nombre del lead es obligatorio.');
+    }
+    if (createLeadDto.etapaVenta === LeadEtapaVenta.CIERRE_PERDIDO && !createLeadDto.motivoPerdida) {
+      throw new BadRequestException('El motivo de p�rdida es obligatorio.');
     }
 
     const companyName = createLeadDto.companyName || createLeadDto.empresa || null;
@@ -68,10 +70,10 @@ export class LeadsService {
     const fuente = createLeadDto.fuente || createLeadDto.source || null;
     const vendedorId = await this.resolveVendedorId(createLeadDto.vendedorId, usuarioId, effectiveTenantId);
 
-    const count = await tenantClient.lead.count();
-    const leadId = `LEAD-${(count + 1).toString().padStart(3, '0')}`;
+    const count = await tenantClient.lead.count({ where: { tenantId: effectiveTenantId } });
+    const leadId = 'LEAD-' + (count + 1).toString().padStart(3, '0');
 
-    return tenantClient.lead.create({
+    const lead = await tenantClient.lead.create({
       data: {
         tenantId: effectiveTenantId,
         leadId,
@@ -85,10 +87,34 @@ export class LeadsService {
         observaciones: createLeadDto.observaciones || null,
         estado: createLeadDto.estado || LeadStatus.NUEVO,
         motivoPerdida: createLeadDto.motivoPerdida || null,
+        etapaVenta: createLeadDto.etapaVenta || LeadEtapaVenta.PROSPECTO_NUEVO,
+        montoEstimado: createLeadDto.montoEstimado ?? null,
+        paisOrigen: createLeadDto.paisOrigen || null,
+        tipoCarga: createLeadDto.tipoCarga || null,
         proximoSeguimiento: createLeadDto.proximoSeguimiento ? new Date(createLeadDto.proximoSeguimiento) : null,
         vendedorId,
       },
     });
+
+    if (lead.proximoSeguimiento) {
+      const responsableId = vendedorId || (await tenantClient.user.findFirst({ where: { tenantId: effectiveTenantId }, select: { id: true } }))?.id;
+      if (responsableId) {
+        await tenantClient.activity.create({
+          data: {
+            tenantId: effectiveTenantId,
+            tipo: 'SEGUIMIENTO',
+            titulo: 'Seguimiento: ' + lead.name,
+            descripcion: lead.observaciones || 'Seguimiento generado automaticamente desde Leads.',
+            fecha: lead.proximoSeguimiento,
+            responsableId,
+            leadId: lead.id,
+            estado: 'PENDIENTE',
+          },
+        });
+      }
+    }
+
+    return lead;
   }
 
   async findAll(tenantId: string, page: number = 1, limit: number = 10, estado?: string, search?: string) {
@@ -151,7 +177,7 @@ export class LeadsService {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
     const tenantClient = this.prisma.getTenantClient(effectiveTenantId);
 
-    if (updateData.estado === LeadStatus.PERDIDO && !updateData.motivoPerdida) {
+    if ((updateData.estado === LeadStatus.PERDIDO || updateData.etapaVenta === LeadEtapaVenta.CIERRE_PERDIDO) && !updateData.motivoPerdida) {
       throw new BadRequestException('El motivo de pérdida es obligatorio.');
     }
 
@@ -180,6 +206,10 @@ export class LeadsService {
       ...(updateData.observaciones !== undefined && { observaciones: updateData.observaciones }),
       ...(updateData.estado !== undefined && { estado: updateData.estado }),
       ...(updateData.motivoPerdida !== undefined && { motivoPerdida: updateData.motivoPerdida }),
+      ...(updateData.etapaVenta !== undefined && { etapaVenta: updateData.etapaVenta }),
+      ...(updateData.montoEstimado !== undefined && { montoEstimado: updateData.montoEstimado }),
+      ...(updateData.paisOrigen !== undefined && { paisOrigen: updateData.paisOrigen }),
+      ...(updateData.tipoCarga !== undefined && { tipoCarga: updateData.tipoCarga }),
       ...(updateData.proximoSeguimiento !== undefined && {
         proximoSeguimiento: updateData.proximoSeguimiento ? new Date(updateData.proximoSeguimiento) : null,
       }),
@@ -260,12 +290,13 @@ export class LeadsService {
   // ----------------------------------------------------
 
   async createTouchpoint(leadId: string, dto: CreateLeadTouchpointDto, tenantId: string, usuarioId?: string) {
-    const tenantClient = this.prisma.getTenantClient(tenantId);
-    await this.findOne(leadId, tenantId);
+    const effectiveTenantId = await this.resolveTenantId(tenantId);
+    const tenantClient = this.prisma.getTenantClient(effectiveTenantId);
+    await this.findOne(leadId, effectiveTenantId);
 
-    return tenantClient.leadTouchpoint.create({
+    const touchpoint = await tenantClient.leadTouchpoint.create({
       data: {
-        tenantId,
+        tenantId: effectiveTenantId,
         leadId,
         canal: dto.canal,
         fecha: dto.fecha ? new Date(dto.fecha) : new Date(),
@@ -283,6 +314,26 @@ export class LeadsService {
         fechaRecontacto: dto.fechaRecontacto ? new Date(dto.fechaRecontacto) : null,
       },
     });
+
+    if (touchpoint.fechaRecontacto || touchpoint.canal === 'REUNION') {
+      const responsableId = await this.resolveVendedorId(undefined, usuarioId, effectiveTenantId) || (await tenantClient.user.findFirst({ where: { tenantId: effectiveTenantId }, select: { id: true } }))?.id;
+      if (responsableId) {
+        await tenantClient.activity.create({
+          data: {
+            tenantId: effectiveTenantId,
+            tipo: touchpoint.canal === 'REUNION' ? 'REUNION' : 'SEGUIMIENTO',
+            titulo: touchpoint.canal === 'REUNION' ? 'Reunion con lead' : 'Seguimiento de lead',
+            descripcion: touchpoint.compromisosPendientes || touchpoint.resumen || 'Actividad generada desde historial de lead.',
+            fecha: touchpoint.fechaRecontacto || touchpoint.fecha,
+            responsableId,
+            leadId,
+            estado: 'PENDIENTE',
+          },
+        });
+      }
+    }
+
+    return touchpoint;
   }
 
   async findTouchpoints(leadId: string, tenantId: string) {

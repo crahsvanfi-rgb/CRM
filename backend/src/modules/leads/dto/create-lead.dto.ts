@@ -1,5 +1,5 @@
-import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsEmail } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsString, IsOptional, IsEnum, IsUUID, IsDateString, IsEmail, IsNumber } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 export enum LeadStatus {
   NUEVO = 'NUEVO',
@@ -9,6 +9,22 @@ export enum LeadStatus {
   NEGOCIACION = 'NEGOCIACION',
   GANADO = 'GANADO',
   PERDIDO = 'PERDIDO',
+}
+
+export enum LeadEtapaVenta {
+  PROSPECTO_NUEVO = 'PROSPECTO_NUEVO',
+  CONTACTO_REALIZADO = 'CONTACTO_REALIZADO',
+  CLIENTE_CALIFICADO = 'CLIENTE_CALIFICADO',
+  COTIZACION_ENVIADA = 'COTIZACION_ENVIADA',
+  NEGOCIACION = 'NEGOCIACION',
+  CIERRE_GANADO = 'CIERRE_GANADO',
+  CIERRE_PERDIDO = 'CIERRE_PERDIDO',
+}
+
+export enum TipoCarga {
+  MARITIMO = 'MARITIMO',
+  AEREO = 'AEREO',
+  TERRESTRE = 'TERRESTRE',
 }
 
 export class CreateLeadDto {
@@ -81,7 +97,24 @@ export class CreateLeadDto {
   @IsOptional()
   estado?: LeadStatus;
 
+    @IsEnum(LeadEtapaVenta)
+  @IsOptional()
+  etapaVenta?: LeadEtapaVenta;
+
+  @Type(() => Number)
+  @IsNumber()
+  @IsOptional()
+  montoEstimado?: number;
+
   @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @IsString()
+  @IsOptional()
+  paisOrigen?: string;
+
+  @IsEnum(TipoCarga)
+  @IsOptional()
+  tipoCarga?: TipoCarga;
+@Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
   @IsString()
   @IsOptional()
   motivoPerdida?: string;

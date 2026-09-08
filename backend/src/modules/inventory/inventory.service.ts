@@ -57,12 +57,12 @@ export class InventoryService {
     const logic = async (tx: any) => {
       // 1. Obtener el stock actual o crearlo
       let productStock = await tx.productStock.findUnique({
-        where: { tenantId_productId: { tenantId, productId: dto.productId } }
+        where: { tenantId_productId: { tenantId: effectiveTenantId, productId: dto.productId } }
       });
 
       if (!productStock) {
         productStock = await tx.productStock.create({
-          data: { tenantId, productId: dto.productId, stockFisico: 0, stockReservado: 0, stockTransito: 0 }
+          data: { tenantId: effectiveTenantId, productId: dto.productId, stockFisico: 0, stockReservado: 0, stockTransito: 0 }
         });
       }
 
@@ -95,7 +95,7 @@ export class InventoryService {
       // 3. Registrar el movimiento
       const movimiento = await tx.inventoryMovement.create({
         data: {
-          tenantId,
+          tenantId: effectiveTenantId,
           productId: dto.productId,
           warehouseId: dto.warehouseId,
           tipo: dto.tipo,

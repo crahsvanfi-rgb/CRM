@@ -23,6 +23,22 @@ enum LeadStatus {
   PERDIDO
 }
 
+enum LeadEtapaVenta {
+  PROSPECTO_NUEVO
+  CONTACTO_REALIZADO
+  CLIENTE_CALIFICADO
+  COTIZACION_ENVIADA
+  NEGOCIACION
+  CIERRE_GANADO
+  CIERRE_PERDIDO
+}
+
+enum TipoCarga {
+  MARITIMO
+  AEREO
+  TERRESTRE
+}
+
 enum LeadTouchpointCanal {
   LLAMADA
   WHATSAPP
@@ -231,6 +247,10 @@ model Lead {
   observaciones      String?
   estado             LeadStatus @default(NUEVO)
   motivoPerdida      String?
+  etapaVenta         LeadEtapaVenta @default(PROSPECTO_NUEVO)
+  montoEstimado      Decimal?       @db.Decimal(12, 2)
+  paisOrigen         String?
+  tipoCarga          TipoCarga?
   proximoSeguimiento DateTime?
   vendedorId         String?    @db.Uuid
   activo             Boolean    @default(true) // Soft delete

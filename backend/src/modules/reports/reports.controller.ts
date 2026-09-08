@@ -61,6 +61,21 @@ export class ReportsController {
     return this.reportsService.getInactiveCustomers((req.headers['x-tenant-id'] || req.user?.tenantId), query);
   }
 
+  @Get('lead-funnel')
+  getLeadFunnel(@Request() req: any, @Query() query: ReportQueryDto) {
+    return this.reportsService.getLeadFunnel((req.headers['x-tenant-id'] || req.user?.tenantId), query);
+  }
+
+  @Get('lead-forecast')
+  getLeadForecast(@Request() req: any, @Query() query: ReportQueryDto) {
+    return this.reportsService.getLeadForecast((req.headers['x-tenant-id'] || req.user?.tenantId), query);
+  }
+
+  @Get('lead-loss-reasons')
+  getLeadLossReasons(@Request() req: any, @Query() query: ReportQueryDto) {
+    return this.reportsService.getLeadLossReasons((req.headers['x-tenant-id'] || req.user?.tenantId), query);
+  }
+
   @Get('importations')
   getImportationsReport(@Request() req: any, @Query() query: ReportQueryDto) {
     return this.reportsService.getImportationsReport((req.headers['x-tenant-id'] || req.user?.tenantId), query);

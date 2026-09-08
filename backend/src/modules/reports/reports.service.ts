@@ -354,4 +354,33 @@ export class ReportsService {
       };
     });
   }
+
+  async getLeadFunnel(tenantId: string, query: ReportQueryDto) {
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    const dateRange = this.getDateRange(query);
+    const where: any = { tenantId, activo: true };
+    if (dateRange) where.createdAt = dateRange;
+    const grouped = await tenantClient.lead.groupBy({ by: ['etapaVenta'], where, _count: { id: true }, _sum: { montoEstimado: true } });
+    return grouped.map((g: any) => ({ etapa: g.etapaVenta || 'PROSPECTO_NUEVO', cantidad: g._count.id, montoEstimado: Number(g._sum.montoEstimado || 0) }));
+  }
+
+  async getLeadForecast(tenantId: string, query: ReportQueryDto) {
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    const dateRange = this.getDateRange(query);
+    const where: any = { tenantId, activo: true, etapaVenta: { in: ['CLIENTE_CALIFICADO', 'COTIZACION_ENVIADA', 'NEGOCIACION'] } };
+    if (dateRange) where.createdAt = dateRange;
+    const leads = await tenantClient.lead.findMany({ where, select: { id: true, leadId: true, name: true, companyName: true, etapaVenta: true, montoEstimado: true, vendedor: { select: { name: true, email: true } } }, orderBy: { updatedAt: 'desc' }, take: 100 });
+    const total = leads.reduce((acc: number, l: any) => acc + Number(l.montoEstimado || 0), 0);
+    return { totalPronosticado: total, oportunidades: leads.map((l: any) => ({ ...l, montoEstimado: Number(l.montoEstimado || 0) })) };
+  }
+
+  async getLeadLossReasons(tenantId: string, query: ReportQueryDto) {
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    const dateRange = this.getDateRange(query);
+    const where: any = { tenantId, activo: true, OR: [{ etapaVenta: 'CIERRE_PERDIDO' }, { estado: 'PERDIDO' }] };
+    if (dateRange) where.createdAt = dateRange;
+    const grouped = await tenantClient.lead.groupBy({ by: ['motivoPerdida'], where, _count: { id: true } });
+    return grouped.map((g: any) => ({ motivo: g.motivoPerdida || 'Sin motivo', cantidad: g._count.id }));
+  }
+
 }

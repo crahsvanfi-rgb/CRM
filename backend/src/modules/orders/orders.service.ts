@@ -316,7 +316,7 @@ export class OrdersService {
       content: [
         { text: `Pedido ${order.numero}`, style: 'header' },
         { text: `Fecha: ${order.fecha.toLocaleDateString()}` },
-        { text: `Cliente: ${order.cliente.nombre} (${order.cliente.email})` },
+        { text: `Cliente: ${order.cliente?.nombreComercial || order.cliente?.razonSocial || 'Sin nombre'} (${order.cliente?.email || 'Sin email'})` },
         { text: `Estado: ${order.estado}` },
         { text: '\n' },
         {

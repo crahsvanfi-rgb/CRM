@@ -444,6 +444,9 @@ export class AiToolsService {
       case 'getBestCampaign': return this.getBestCampaign(tenantId, roleName, userId, args?.criterio);
       case 'getUnresponsiveCustomers': return this.getUnresponsiveCustomers(tenantId, roleName, userId, args?.limit);
       case 'getLeadHistory': return this.getLeadHistory(tenantId, args?.leadId);
+      case 'getLeadFunnel': return this.getLeadFunnel(tenantId, roleName);
+      case 'getLeadForecast': return this.getLeadForecast(tenantId, roleName);
+      case 'getLeadLossReasons': return this.getLeadLossReasons(tenantId, roleName);
       default:
         throw new Error(`Herramienta no implementada: ${name}`);
     }
@@ -1573,4 +1576,26 @@ export class AiToolsService {
       sugerenciaAccion: 'Se sugiere programar una llamada de seguimiento o un mensaje personalizado vía asesor comercial para los contactos que no respondieron a la campaña masiva.'
     };
   }
+
+  private async getLeadFunnel(tenantId: string, roleName: string) {
+    if (roleName !== 'Admin' && roleName !== 'Gerente') return { error: 'Permiso denegado.' };
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    const grouped = await tenantClient.lead.groupBy({ by: ['etapaVenta'], where: { tenantId, activo: true }, _count: { id: true }, _sum: { montoEstimado: true } });
+    return { embudo: grouped.map((g: any) => ({ etapa: g.etapaVenta || 'PROSPECTO_NUEVO', cantidad: g._count.id, montoEstimado: Number(g._sum.montoEstimado || 0) })) };
+  }
+
+  private async getLeadForecast(tenantId: string, roleName: string) {
+    if (roleName !== 'Admin' && roleName !== 'Gerente') return { error: 'Permiso denegado.' };
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    const leads = await tenantClient.lead.findMany({ where: { tenantId, activo: true, etapaVenta: { in: ['CLIENTE_CALIFICADO', 'COTIZACION_ENVIADA', 'NEGOCIACION'] } }, select: { leadId: true, name: true, companyName: true, etapaVenta: true, montoEstimado: true }, orderBy: { updatedAt: 'desc' }, take: 50 });
+    return { totalPronosticado: leads.reduce((acc: number, l: any) => acc + Number(l.montoEstimado || 0), 0), oportunidades: leads.map((l: any) => ({ ...l, montoEstimado: Number(l.montoEstimado || 0) })) };
+  }
+
+  private async getLeadLossReasons(tenantId: string, roleName: string) {
+    if (roleName !== 'Admin' && roleName !== 'Gerente') return { error: 'Permiso denegado.' };
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    const grouped = await tenantClient.lead.groupBy({ by: ['motivoPerdida'], where: { tenantId, activo: true, OR: [{ etapaVenta: 'CIERRE_PERDIDO' }, { estado: 'PERDIDO' }] }, _count: { id: true } });
+    return { motivos: grouped.map((g: any) => ({ motivo: g.motivoPerdida || 'Sin motivo', cantidad: g._count.id })) };
+  }
+
 }

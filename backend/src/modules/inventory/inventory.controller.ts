@@ -19,8 +19,7 @@ export class InventoryController {
   }
 
   private getUserId(req: any): string {
-    // Para MVP, tomamos un usuario por defecto si no viene en el token real
-    return req.user?.sub || '00000000-0000-0000-0000-000000000000';
+    return req.headers['x-user-id'] || req.user?.sub || '00000000-0000-0000-0000-000000000000';
   }
 
   @Post('movements')
