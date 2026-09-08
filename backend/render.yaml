@@ -1,28 +1,23 @@
 services:
   - type: web
-    runtime: node
     name: crm-importadoras-backend
-    repo: https://github.com/crahsvanfi-rgb/CRM
-    branch: main
-    rootDir: backend
+    runtime: node
     plan: free
+    region: oregon
     buildCommand: npm ci --legacy-peer-deps --include=dev && npx prisma generate && npm run build
     startCommand: npx prisma migrate deploy && npm run start:prod
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 3001
-      - key: FRONTEND_URL
-        value: https://crm-importadoras.vercel.app
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
       - key: AI_ENCRYPTION_KEY
         sync: false
-      - key: OPENROUTER_API_KEY
+      - key: FRONTEND_URL
         sync: false
-      - key: ZERNIO_API_KEY
-        sync: false
-
