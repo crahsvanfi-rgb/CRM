@@ -1082,8 +1082,10 @@ model ChatbotConfiguration {
   reglasComerciales        String?
   informacionInstitucional String?
   instruccionesProhibidas  String?
+  apiKey                   String?
   nivelCreatividad         Decimal  @default(0.3) @db.Decimal(3, 2)
   modeloOpenRouter         String   @default("openai/gpt-4o-mini")
+  maxTokens                Int      @default(1000)
   permisos                 Json
   transferirHumano         Boolean  @default(false)
   createdAt                DateTime @default(now())

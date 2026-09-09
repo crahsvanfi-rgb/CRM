@@ -1,4 +1,4 @@
-import { IsBoolean, IsNumber, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class PermisosDto {
@@ -35,6 +35,10 @@ export class ChatbotConfigDto {
   @IsBoolean()
   @IsOptional()
   activo?: boolean;
+
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
 
   @IsString()
   @IsOptional()
@@ -85,6 +89,12 @@ export class ChatbotConfigDto {
   @IsString()
   @IsOptional()
   modeloOpenRouter?: string;
+
+  @IsInt()
+  @Min(100)
+  @Max(8000)
+  @IsOptional()
+  maxTokens?: number;
 
   @IsObject()
   @ValidateNested()

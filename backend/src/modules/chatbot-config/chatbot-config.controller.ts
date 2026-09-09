@@ -28,6 +28,12 @@ export class ChatbotConfigController {
     return this.chatbotConfigService.updateConfig(tenantId, userId, dto);
   }
 
+  @Post('test-connection')
+  @Roles('Admin', 'Gerente')
+  testConnection(@TenantId() tenantId: string) {
+    return this.chatbotConfigService.testConnection(tenantId);
+  }
+
   @Post('test')
   @Roles('Admin', 'Gerente')
   testChatbot(

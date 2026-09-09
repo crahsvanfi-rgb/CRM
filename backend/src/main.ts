@@ -5,7 +5,7 @@ import { AppModule } from './app.module.js';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   
   // Habilitar validaciones globales de forma estricta (class-validator)
   app.useGlobalFilters(new PrismaExceptionFilter());
@@ -56,6 +56,8 @@ async function bootstrap() {
       'traceparent',
       'prefer',
       'x-request-id',
+      'X-Zernio-Signature',
+      'x-zernio-signature',
     ],
     exposedHeaders: ['Content-Disposition', 'Content-Length', 'x-total-count'],
     credentials: true,
