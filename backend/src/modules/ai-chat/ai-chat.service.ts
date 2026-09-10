@@ -321,7 +321,7 @@ export class AiChatService {
           continue;
         } else {
           // No hay tool calls, es la respuesta final
-          finalResponse = msg.content || '';
+          finalResponse = this.extractMessageContent(msg);
           break;
         }
       }
@@ -544,11 +544,38 @@ export class AiChatService {
           continue;
         }
 
-        finalResponse = msg.content || '';
+        finalResponse = this.extractMessageContent(msg);
         break;
       }
 
-      if (!finalResponse) finalResponse = 'Lo siento, no pude generar una respuesta.';
+      if (!finalResponse) {
+        const fallback = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              ...messages.filter((message) => message.role !== 'tool'),
+              { role: 'system', content: 'Responde al cliente en texto claro, sin llamar herramientas.' },
+            ],
+            temperature: Number(chatbotConfig.nivelCreatividad ?? aiConfig?.temperature ?? 0.3),
+            max_tokens: chatbotConfig.maxTokens || aiConfig?.maxTokens || 1000,
+          }),
+        });
+
+        if (fallback.ok) {
+          const fallbackJson: any = await fallback.json();
+          finalResponse = this.extractMessageContent(fallbackJson.choices?.[0]?.message || {});
+          promptTokens += fallbackJson.usage?.prompt_tokens || 0;
+          completionTokens += fallbackJson.usage?.completion_tokens || 0;
+          totalTokens += fallbackJson.usage?.total_tokens || 0;
+        }
+      }
+
+      if (!finalResponse) finalResponse = 'Hola, recibí tu mensaje. ¿En qué producto o cotización puedo ayudarte?';
 
       await this.aiUsageService.recordUsage(tenantId, {
         usuarioId: undefined,
@@ -564,6 +591,23 @@ export class AiChatService {
     } catch (error: any) {
       throw new InternalServerErrorException(error.message);
     }
+  }
+
+  private extractMessageContent(message: any) {
+    const content = message?.content;
+    if (typeof content === 'string') return content.trim();
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => {
+          if (typeof part === 'string') return part;
+          if (typeof part?.text === 'string') return part.text;
+          if (typeof part?.content === 'string') return part.content;
+          return '';
+        })
+        .join('')
+        .trim();
+    }
+    return '';
   }
 
   private isUuid(value?: string | null) {
