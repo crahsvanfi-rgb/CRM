@@ -38,6 +38,7 @@ export default function InventorySummaryPage() {
     precioVenta: '',
     costoBase: '',
     stockMinimo: '0',
+    stockInicial: '',
     unidad: 'PZA',
     descripcion: '',
   });
@@ -118,6 +119,24 @@ export default function InventorySummaryPage() {
         throw new Error(msg || 'Error al registrar el producto');
       }
 
+      if (formData.stockInicial !== '' && Number(formData.stockInicial) > 0) {
+        const stockRes = await fetch(`${apiUrl}/inventory/movements`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            productId: json.id,
+            cantidad: Number(formData.stockInicial),
+            tipo: 'AJUSTE_POSITIVO',
+            motivo: 'Stock inicial del producto',
+          }),
+        });
+        const stockJson = await stockRes.json().catch(() => ({}));
+        if (!stockRes.ok) {
+          const msg = Array.isArray(stockJson.message) ? stockJson.message.join(', ') : stockJson.message;
+          throw new Error(msg || 'Producto creado, pero no se pudo registrar el stock inicial');
+        }
+      }
+
       setSuccessMessage(`Producto "${json.nombre}" creado exitosamente.`);
       setTimeout(() => setSuccessMessage(null), 4000);
 
@@ -128,6 +147,7 @@ export default function InventorySummaryPage() {
         precioVenta: '',
         costoBase: '',
         stockMinimo: '0',
+        stockInicial: '',
         unidad: 'PZA',
         descripcion: '',
       });
@@ -398,6 +418,19 @@ export default function InventorySummaryPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-foreground">Stock Inicial <span className="text-muted-foreground font-normal">(Opcional)</span></label>
+                  <input type="number" min="0" placeholder="0" className="w-full bg-background dark:bg-slate-950 border border-border dark:border-slate-800 rounded-xl p-2.5 text-foreground focus:outline-none focus:border-primary transition" value={formData.stockInicial} onChange={(e) => setFormData({ ...formData, stockInicial: e.target.value })} />
+                  <p className="text-[10px] text-muted-foreground">Crea automáticamente el movimiento de entrada.</p>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-foreground">Stock Mínimo <span className="text-muted-foreground font-normal">(Opcional)</span></label>
+                  <input type="number" min="0" placeholder="0" className="w-full bg-background dark:bg-slate-950 border border-border dark:border-slate-800 rounded-xl p-2.5 text-foreground focus:outline-none focus:border-primary transition" value={formData.stockMinimo} onChange={(e) => setFormData({ ...formData, stockMinimo: e.target.value })} />
+                  <p className="text-[10px] text-muted-foreground">Solo activa la alerta de stock bajo.</p>
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-foreground">
@@ -429,19 +462,7 @@ export default function InventorySummaryPage() {
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <label className="font-semibold text-foreground">
-                    Stock Mínimo <span className="text-muted-foreground font-normal">(Opcional)</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    className="w-full bg-background dark:bg-slate-950 border border-border dark:border-slate-800 rounded-xl p-2.5 text-foreground focus:outline-none focus:border-primary transition"
-                    value={formData.stockMinimo}
-                    onChange={(e) => setFormData({ ...formData, stockMinimo: e.target.value })}
-                  />
-                </div>
+
               </div>
 
               <div className="space-y-1">
