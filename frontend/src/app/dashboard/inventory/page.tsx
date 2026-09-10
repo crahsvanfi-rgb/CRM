@@ -44,6 +44,10 @@ export default function InventorySummaryPage() {
   });
 
   const apiUrl = getApiUrl();
+  const totalProducts = products.length;
+  const totalPhysical = products.reduce((sum, p) => sum + Number(p.stock?.fisico || 0), 0);
+  const totalAvailable = products.reduce((sum, p) => sum + Number(p.stock?.disponible || 0), 0);
+  const lowStockProducts = products.filter((p) => Number(p.stock?.disponible || 0) <= Number(p.stockMinimo || 0)).length;
 
 
   const fetchInventory = async () => {
@@ -53,6 +57,7 @@ export default function InventorySummaryPage() {
       const url = new URL(`${apiUrl}/inventory/stock-summary`);
       url.searchParams.append('page', '1');
       url.searchParams.append('limit', '50');
+      url.searchParams.append('_ts', Date.now().toString());
       if (search) url.searchParams.append('search', search);
       if (stockBajo) url.searchParams.append('stockBajo', 'true');
 
@@ -184,6 +189,13 @@ export default function InventorySummaryPage() {
           <span>{successMessage}</span>
         </div>
       )}
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-card border border-border rounded-xl p-4"><p className="text-[11px] text-muted-foreground uppercase font-semibold">Productos</p><p className="text-2xl font-bold text-foreground mt-1">{totalProducts}</p><p className="text-[11px] text-muted-foreground">SKUs visibles</p></div>
+        <div className="bg-card border border-border rounded-xl p-4"><p className="text-[11px] text-muted-foreground uppercase font-semibold">Unidades fisicas</p><p className="text-2xl font-bold text-foreground mt-1">{totalPhysical}</p><p className="text-[11px] text-muted-foreground">Stock almacenado</p></div>
+        <div className="bg-card border border-border rounded-xl p-4"><p className="text-[11px] text-muted-foreground uppercase font-semibold">Disponibles</p><p className="text-2xl font-bold text-emerald-600 mt-1">{totalAvailable}</p><p className="text-[11px] text-muted-foreground">Listas para venta</p></div>
+        <div className="bg-card border border-border rounded-xl p-4"><p className="text-[11px] text-muted-foreground uppercase font-semibold">Alertas</p><p className="text-2xl font-bold text-amber-600 mt-1">{lowStockProducts}</p><p className="text-[11px] text-muted-foreground">Productos bajo minimo</p></div>
+      </div>
 
       {/* Barra de Filtros */}
       <div className="flex flex-col sm:flex-row gap-4 items-center bg-card dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-border dark:border-slate-800">
@@ -403,7 +415,7 @@ export default function InventorySummaryPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="font-semibold text-foreground">Stock Inicial <span className="text-muted-foreground font-normal">(Opcional)</span></label>
+                  <label className="font-semibold text-primary">Cantidad inicial en inventario <span className="text-muted-foreground font-normal">(Opcional)</span></label>
                   <input type="number" min="0" placeholder="0" className="w-full bg-background dark:bg-slate-950 border border-border dark:border-slate-800 rounded-xl p-2.5 text-foreground focus:outline-none focus:border-primary transition" value={formData.stockInicial} onChange={(e) => setFormData({ ...formData, stockInicial: e.target.value })} />
                   <p className="text-[10px] text-muted-foreground">Crea automáticamente el movimiento de entrada.</p>
                 </div>
