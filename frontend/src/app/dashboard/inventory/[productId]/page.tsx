@@ -10,6 +10,7 @@ export default function ProductInventoryPage() {
   const productId = params.productId as string;
   const [stock, setStock] = useState<any>(null);
   const [movements, setMovements] = useState([]);
+  const [submitError, setSubmitError] = useState('' );
   
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ tipo: 'AJUSTE_POSITIVO', cantidad: 1, motivo: '', documentoRef: '' });
@@ -34,18 +35,27 @@ export default function ProductInventoryPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch(`${getApiUrl()}/inventory/movements`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ ...formData, productId, cantidad: Number(formData.cantidad) })
-    });
-    if (!res.ok) {
+    setSubmitError('');
+    const requestUrl = `${getApiUrl()}/inventory/movements`;
+    const requestBody = { ...formData, productId, cantidad: Number(formData.cantidad) };
+    const requestHeaders = getAuthHeaders();
+    console.info('[Inventario] POST movimiento', { url: requestUrl, body: requestBody, headers: { ...requestHeaders, Authorization: requestHeaders.Authorization ? '[present]' : '[missing]' } });
+
+    try {
+      const res = await fetch(requestUrl, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify(requestBody)
+      });
       const json = await res.json().catch(() => ({}));
-      throw new Error(json.message || 'Error al guardar movimiento');
+      console.info('[Inventario] respuesta movimiento', { status: res.status, ok: res.ok, response: json });
+      if (!res.ok) throw new Error(Array.isArray(json.message) ? json.message.join(', ') : json.message || 'Error al guardar movimiento');
+      setShowModal(false);
+      await Promise.all([fetchStock(), fetchMovements()]);
+    } catch (error: any) {
+      console.error('[Inventario] error al guardar movimiento', error);
+      setSubmitError(error.message || 'Error al guardar movimiento');
     }
-    setShowModal(false);
-    fetchStock();
-    fetchMovements();
   };
 
   return (
@@ -119,6 +129,7 @@ export default function ProductInventoryPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md mx-4">
             <h3 className="text-lg font-bold mb-4 text-gray-800">Registrar Nuevo Movimiento</h3>
+            {submitError && <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{submitError}</div>}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Movimiento</label>

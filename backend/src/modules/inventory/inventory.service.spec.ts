@@ -28,9 +28,14 @@ describe('InventoryService', () => {
   const mockTenantClient = {
     product: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
       findMany: vi.fn(),
     },
+    user: {
+      findFirst: vi.fn().mockResolvedValue({ id: mockUserId }),
+    },
+    warehouse: { findFirst: vi.fn() },
     inventoryMovement: {
       findFirst: vi.fn(),
       count: vi.fn(),
@@ -60,7 +65,7 @@ describe('InventoryService', () => {
 
   describe('createMovement', () => {
     it('debe arrojar NotFoundException si el producto no existe', async () => {
-      mockTenantClient.product.findUnique.mockResolvedValue(null);
+      mockTenantClient.product.findFirst.mockResolvedValue(null);
 
       await expect(
         service.createMovement(mockTenantId, mockUserId, {
@@ -72,7 +77,7 @@ describe('InventoryService', () => {
     });
 
     it('debe crear un movimiento de entrada y actualizar el stock correctamente', async () => {
-      mockTenantClient.product.findUnique.mockResolvedValue({ id: mockProductId });
+      mockTenantClient.product.findFirst.mockResolvedValue({ id: mockProductId });
       // Simulamos que ya hay un stock
       mockTx.productStock.findUnique.mockResolvedValue({
         id: 'stock-1',
@@ -106,7 +111,7 @@ describe('InventoryService', () => {
     });
 
     it('debe arrojar BadRequestException si un movimiento resulta en stock negativo', async () => {
-      mockTenantClient.product.findUnique.mockResolvedValue({ id: mockProductId });
+      mockTenantClient.product.findFirst.mockResolvedValue({ id: mockProductId });
       mockTx.productStock.findUnique.mockResolvedValue({
         id: 'stock-1',
         stockFisico: 5,
@@ -124,7 +129,7 @@ describe('InventoryService', () => {
     });
 
     it('debe arrojar BadRequestException al reservar más de lo disponible', async () => {
-      mockTenantClient.product.findUnique.mockResolvedValue({ id: mockProductId });
+      mockTenantClient.product.findFirst.mockResolvedValue({ id: mockProductId });
       mockTx.productStock.findUnique.mockResolvedValue({
         id: 'stock-1',
         stockFisico: 10,

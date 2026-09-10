@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { MovementType, Prisma } from '@prisma/client';
 import { CreateMovementDto } from './dto/create-movement.dto.js';
@@ -8,6 +8,8 @@ import { ReleaseStockDto } from './dto/release-stock.dto.js';
 @Injectable()
 export class InventoryService {
   constructor(private prisma: PrismaService) {}
+
+  private readonly logger = new Logger(InventoryService.name);
 
   private readonly uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -83,6 +85,8 @@ export class InventoryService {
     
     const cantidad = this.normalizeQuantity(dto.cantidad);
     const resolvedUsuarioId = await this.resolveUserId(effectiveTenantId, usuarioId, clientToUse);
+
+    this.logger.log('Creando movimiento de inventario', { productId: dto.productId, cantidad, tipo: dto.tipo, tenantId: effectiveTenantId, usuarioId: resolvedUsuarioId });
 
     // Verificamos que el producto exista
     const product = await clientToUse.product.findFirst({
@@ -162,13 +166,18 @@ export class InventoryService {
         }
       });
 
+      this.logger.log('Movimiento creado y stock actualizado', { movimientoId: movimiento.id, productId: dto.productId, stockFisico: stockFisicoPosterior, tenantId: effectiveTenantId });
+
       return movimiento;
     };
 
-    if (externalTx) {
-      return logic(externalTx);
+    try {
+      if (externalTx) return await logic(externalTx);
+      return await tenantClient.$transaction(logic);
+    } catch (error) {
+      this.logger.error('Error al crear movimiento de inventario', error instanceof Error ? error.stack : error);
+      throw error;
     }
-    return tenantClient.$transaction(logic);
   }
 
   async reserveStock(tenantId: string, usuarioId: string, dto: ReserveStockDto, externalTx?: any) {
