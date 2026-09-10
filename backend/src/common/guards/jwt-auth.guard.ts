@@ -10,7 +10,7 @@ export class JwtAuthGuard implements CanActivate {
     const tenantId = request.headers['x-tenant-id'] || 'dummy-tenant-id';
     const userId = request.headers['x-user-id'] || 'dummy-user-id';
     const roleName = request.headers['x-role'] || 'Admin';
-    request.user = { tenantId, id: userId, role: { name: roleName } };
+    request.user = { tenantId, id: userId, userId, sub: userId, role: { name: roleName } };
     return true;
   }
 }

@@ -1,4 +1,5 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { EncryptionService } from '../../common/services/encryption.service.js';
 import { AiChatService } from '../ai-chat/ai-chat.service.js';
@@ -19,10 +20,27 @@ import { SendZernioMessageDto } from './dto/send-zernio-message.dto.js';
 import { PublishZernioDto } from './dto/publish-zernio.dto.js';
 import { ZernioConfigDto } from './dto/zernio-config.dto.js';
 
+type IncomingZernioMessage = {
+  senderPhone: string;
+  text: string;
+  mediaUrl: string | null;
+  contactName: string | null;
+  externalMessageId: string;
+  zernioConversationId?: string;
+  zernioAccountId?: string;
+  zernioProfileId?: string;
+};
+
+type IncomingWebhookHeaders = {
+  signature?: string;
+  event?: string;
+  eventId?: string;
+  tenantId?: string;
+};
 @Injectable()
 export class ZernioService {
   private readonly logger = new Logger(ZernioService.name);
-  private readonly zernioApiUrl = process.env.ZERNIO_API_URL || 'https://api.zernio.com/v1';
+  private readonly zernioApiUrl = process.env.ZERNIO_API_URL || process.env.CERNIO_API_URL || 'https://zernio.com/api/v1';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,6 +48,107 @@ export class ZernioService {
     private readonly aiChat: AiChatService,
   ) {}
 
+  public verifyIncomingWebhookSignature(req: { rawBody?: Buffer }, body: unknown, headers?: IncomingWebhookHeaders): boolean {
+    const secret = process.env.ZERNIO_WEBHOOK_SECRET || process.env.CERNIO_WEBHOOK_SECRET;
+    if (!secret) {
+      this.logger.warn('ZERNIO_WEBHOOK_SECRET no esta configurado; el webhook se acepta sin firma. Configuralo en Render para produccion.');
+      return true;
+    }
+
+    const signature = headers?.signature?.trim();
+    if (!signature) {
+      this.logger.warn('Webhook Zernio rechazado: falta X-Zernio-Signature');
+      throw new UnauthorizedException('Firma requerida');
+    }
+
+    const rawBody = req.rawBody && req.rawBody.length > 0 ? req.rawBody : Buffer.from(JSON.stringify(body));
+    const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+    const received = signature.replace(/^sha256=/i, '').replace(/^v1=/i, '').trim().toLowerCase();
+
+    if (!this.safeCompareHex(received, expected)) {
+      this.logger.warn('Webhook Zernio rechazado: firma invalida');
+      throw new UnauthorizedException('Firma invalida');
+    }
+
+    return true;
+  }
+
+  private safeCompareHex(received: string, expected: string) {
+    try {
+      const receivedBuffer = Buffer.from(received, 'hex');
+      const expectedBuffer = Buffer.from(expected, 'hex');
+      return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
+    } catch {
+      return false;
+    }
+  }
+
+  private normalizePhone(phone: unknown) {
+    return String(phone || '').trim().replace(/[\s()-]/g, '');
+  }
+
+  private extractIncomingMessage(body: any, headers?: IncomingWebhookHeaders): IncomingZernioMessage {
+    const eventId = headers?.eventId || body?.id || body?.messageId || body?.messages?.[0]?.id;
+    const message = body?.message || {};
+    const sender = message?.sender || body?.sender || body?.contact || {};
+    const firstAttachment = message?.attachments?.[0] || body?.attachments?.[0] || body?.media?.[0];
+    const zernioConversationId = body?.conversation?.id || body?.conversationId || body?.zernioConversationId;
+    const zernioAccountId = body?.account?.accountId || body?.accountId || body?.zernioAccountId;
+
+    const textValue =
+      message?.text?.body ||
+      message?.text ||
+      message?.body ||
+      body?.mensaje ||
+      body?.text ||
+      body?.body ||
+      body?.messageText ||
+      body?.messages?.[0]?.text?.body ||
+      body?.messages?.[0]?.body ||
+      '';
+
+    const senderPhone = this.normalizePhone(
+      sender?.phone ||
+        sender?.phoneNumber ||
+        sender?.wa_id ||
+        sender?.id ||
+        message?.from ||
+        body?.telefono ||
+        body?.phone ||
+        body?.from ||
+        body?.contactoId ||
+        body?.messages?.[0]?.from ||
+        body?.contacts?.[0]?.wa_id ||
+        '',
+    );
+
+    return {
+      senderPhone,
+      text: String(textValue || '').trim(),
+      mediaUrl: firstAttachment?.url || firstAttachment?.payload?.url || body?.mediaUrl || null,
+      contactName:
+        sender?.name ||
+        sender?.profile?.name ||
+        body?.contactName ||
+        body?.name ||
+        body?.contacts?.[0]?.profile?.name ||
+        null,
+      externalMessageId: message?.id || message?.messageId || message?.platformMessageId || eventId || `zernio_in_${Date.now()}`,
+      zernioConversationId,
+      zernioAccountId,
+      zernioProfileId: body?.account?.profileId,
+    };
+  }
+
+  private getConfiguredToken(configJson?: any) {
+    let token = configJson?.token || configJson?.apiKey || process.env.ZERNIO_API_KEY || process.env.CERNIO_API_KEY || '';
+    if (token && (configJson?.token || configJson?.apiKey)) {
+      try {
+        token = this.encryption.decrypt(token);
+      } catch {}
+    }
+    return token;
+  }
   public async resolveTenantId(tenantId?: string): Promise<string> {
     if (
       tenantId &&
@@ -56,7 +175,7 @@ export class ZernioService {
   }
 
   // ----------------------------------------------------
-  // CONFIGURACIÓN DE ZERNIO
+  // CONFIGURACIÃƒÆ’Ã¢â‚¬Å“N DE ZERNIO
   // ----------------------------------------------------
   async getConfig(tenantId: string) {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
@@ -109,7 +228,7 @@ export class ZernioService {
 
     let configJson: any = existing?.configJson ? { ...(existing.configJson as any) } : {};
 
-    // Cifrar API Key si se envió una nueva y no es la enmascarada
+    // Cifrar API Key si se enviÃƒÆ’Ã‚Â³ una nueva y no es la enmascarada
     if (dto.apiKey && dto.apiKey !== '********') {
       configJson.token = this.encryption.encrypt(dto.apiKey);
       configJson.apiKey = configJson.token;
@@ -146,7 +265,7 @@ export class ZernioService {
       },
     });
 
-    this.logger.log(`Configuración de Zernio actualizada para tenant ${effectiveTenantId}`);
+    this.logger.log(`ConfiguraciÃƒÆ’Ã‚Â³n de Zernio actualizada para tenant ${effectiveTenantId}`);
     return {
       success: true,
       id: saved.id,
@@ -171,7 +290,7 @@ export class ZernioService {
       });
 
       if (!config || !config.configJson) {
-        return { status: 'SIN_CONFIGURAR', message: 'No hay configuración registrada para Zernio.' };
+        return { status: 'SIN_CONFIGURAR', message: 'No hay configuraciÃƒÆ’Ã‚Â³n registrada para Zernio.' };
       }
 
       const configJson = config.configJson as any;
@@ -186,7 +305,7 @@ export class ZernioService {
     }
 
     try {
-      // Si la URL de Zernio está configurada o se cuenta con credenciales reales, intentamos ping HTTP
+      // Si la URL de Zernio estÃƒÆ’Ã‚Â¡ configurada o se cuenta con credenciales reales, intentamos ping HTTP
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
 
@@ -198,34 +317,34 @@ export class ZernioService {
         },
         signal: controller.signal,
       }).catch((e) => {
-        // En entorno local o sin internet, no arrojamos error fatal si el token tiene formato válido
+        // En entorno local o sin internet, no arrojamos error fatal si el token tiene formato vÃƒÆ’Ã‚Â¡lido
         return null;
       });
 
       clearTimeout(timeoutId);
 
       if (response && response.ok) {
-        return { status: 'CONECTADO', message: 'Conexión con Zernio verificada exitosamente.' };
+        return { status: 'CONECTADO', message: 'ConexiÃƒÆ’Ã‚Â³n con Zernio verificada exitosamente.' };
       }
 
-      // Si el token tiene formato sk_ o caracteres mínimos válidos, asumimos conexión operativa para pruebas
+      // Si el token tiene formato sk_ o caracteres mÃƒÆ’Ã‚Â­nimos vÃƒÆ’Ã‚Â¡lidos, asumimos conexiÃƒÆ’Ã‚Â³n operativa para pruebas
       if (token.length >= 8) {
         return { status: 'CONECTADO', message: 'Credenciales de Zernio validadas correctamente.' };
       }
 
       return { status: 'ERROR', message: 'La API Key de Zernio no fue aceptada.' };
     } catch (err: any) {
-      this.logger.warn(`Prueba de conexión Zernio con advertencia: ${err.message}`);
+      this.logger.warn(`Prueba de conexiÃƒÆ’Ã‚Â³n Zernio con advertencia: ${err.message}`);
       return { status: 'CONECTADO', message: 'Credenciales almacenadas correctamente.' };
     }
   }
 
   // ----------------------------------------------------
-  // ENVÍO DE MENSAJES SALIENTES (WHATSAPP VIA ZERNIO)
+  // ENVÃƒÆ’Ã‚ÂO DE MENSAJES SALIENTES (WHATSAPP VIA ZERNIO)
   // ----------------------------------------------------
   async sendMessage(tenantId: string, dto: SendZernioMessageDto, senderType: 'BOT' | 'HUMANO' = 'BOT') {
     if (!dto.telefono || !dto.mensaje) {
-      throw new BadRequestException('El teléfono y el mensaje son requeridos');
+      throw new BadRequestException('El telÃƒÆ’Ã‚Â©fono y el mensaje son requeridos');
     }
 
     const effectiveTenantId = await this.resolveTenantId(tenantId || dto.tenantId);
@@ -241,18 +360,10 @@ export class ZernioService {
       orderBy: { updatedAt: 'desc' },
     });
 
-    let token = '';
-    if (channelConfig?.configJson) {
-      const cfg = channelConfig.configJson as any;
-      token = cfg.token || cfg.apiKey || '';
-      if (token) {
-        try {
-          token = this.encryption.decrypt(token);
-        } catch {}
-      }
-    }
-
-    // 2. Buscar o crear conversación
+    const configJson = (channelConfig?.configJson as any) || {};
+    const token = this.getConfiguredToken(configJson);
+    const configuredAccountId = configJson.accountId || configJson.account_id || process.env.ZERNIO_ACCOUNT_ID || process.env.CERNIO_ACCOUNT_ID;
+    // 2. Buscar o crear conversaciÃƒÆ’Ã‚Â³n
     let conversation: any = null;
     if (dto.conversationId) {
       conversation = await tenantClient.conversation.findUnique({
@@ -304,27 +415,53 @@ export class ZernioService {
     let externalMessageId = `zernio_msg_${Date.now()}`;
     try {
       if (token) {
-        const payload = {
-          recipient: dto.telefono,
-          message: dto.mensaje,
-          mediaUrl: dto.mediaUrl,
-        };
+        const zernioConversationId = dto.zernioConversationId;
+        const zernioAccountId = dto.zernioAccountId || configuredAccountId;
+        const idempotencyKey = `crm-${message.id}-${randomUUID()}`;
 
-        const res = await fetch(`${this.zernioApiUrl}/messages`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        }).catch(() => null);
+        const hasOfficialInboxTarget = Boolean(zernioConversationId && zernioAccountId);
+        if (!zernioAccountId) {
+          this.logger.warn('Zernio accountId no esta configurado; el mensaje saliente quedo guardado pero no se envio.');
+        }
+
+        const url = hasOfficialInboxTarget
+          ? `${this.zernioApiUrl}/inbox/conversations/${encodeURIComponent(String(zernioConversationId))}/messages`
+          : `${this.zernioApiUrl}/inbox/conversations`;
+        const payload = hasOfficialInboxTarget
+          ? {
+              accountId: zernioAccountId,
+              message: dto.mensaje,
+              ...(dto.mediaUrl ? { attachmentUrl: dto.mediaUrl } : {}),
+            }
+          : {
+              accountId: zernioAccountId,
+              participantId: dto.telefono,
+              message: dto.mensaje,
+              ...(dto.mediaUrl ? { attachmentUrl: dto.mediaUrl } : {}),
+            };
+
+        const res = zernioAccountId
+          ? await fetch(url, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Idempotency-Key': idempotencyKey,
+              },
+              body: JSON.stringify(payload),
+            }).catch(() => null)
+          : null;
 
         if (res && res.ok) {
           const resData = (await res.json().catch(() => ({}))) as any;
-          if (resData.id) externalMessageId = resData.id;
+          externalMessageId = resData?.data?.messageId || resData?.messageId || resData?.id || externalMessageId;
+        } else if (res) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(`Zernio ${res.status}: ${errText.slice(0, 300)}`);
         }
+      } else {
+        this.logger.warn('ZERNIO_API_KEY/CERNIO_API_KEY no esta configurada; el mensaje saliente quedo guardado pero no se envio.');
       }
-
       await tenantClient.message.update({
         where: { id: message.id },
         data: {
@@ -361,7 +498,7 @@ export class ZernioService {
   }
 
   // ----------------------------------------------------
-  // PUBLICACIÓN MULTICANAL VIA ZERNIO
+  // PUBLICACIÃƒÆ’Ã¢â‚¬Å“N MULTICANAL VIA ZERNIO
   // ----------------------------------------------------
   async publishContent(tenantId: string, dto: PublishZernioDto) {
     if (!dto.plataformas || dto.plataformas.length === 0 || !dto.texto) {
@@ -418,12 +555,12 @@ export class ZernioService {
       };
     } catch (err: any) {
       this.logger.error(`Error publicando contenido con Zernio: ${err.message}`);
-      throw new BadRequestException(`Fallo en publicación: ${err.message}`);
+      throw new BadRequestException(`Fallo en publicaciÃƒÆ’Ã‚Â³n: ${err.message}`);
     }
   }
 
   // ----------------------------------------------------
-  // VERIFICACIÓN DEL WEBHOOK
+  // VERIFICACIÃƒÆ’Ã¢â‚¬Å“N DEL WEBHOOK
   // ----------------------------------------------------
   async verifyWebhook(hubMode: string, verifyToken: string, challenge: string, tenantId?: string): Promise<string> {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
@@ -450,23 +587,23 @@ export class ZernioService {
       return challenge || 'OK';
     }
 
-    throw new BadRequestException('Token de verificación inválido');
+    throw new BadRequestException('Token de verificaciÃƒÆ’Ã‚Â³n invÃƒÆ’Ã‚Â¡lido');
   }
 
   // ----------------------------------------------------
-  // RECEPCIÓN DE WEBHOOK Y AGENTE IA
+  // RECEPCIÃƒÆ’Ã¢â‚¬Å“N DE WEBHOOK Y AGENTE IA
   // ----------------------------------------------------
   private detectScheduleIntent(text: string): boolean {
     if (!text) return false;
     const lower = text.toLowerCase();
     const scheduleKeywords = [
       'agendar',
-      'reunión',
+      'reuniÃƒÆ’Ã‚Â³n',
       'reunion',
       'visita',
       'cita',
-      'mañana',
-      'la próxima semana',
+      'maÃƒÆ’Ã‚Â±ana',
+      'la prÃƒÆ’Ã‚Â³xima semana',
       'proxima semana',
       'coordinar',
       'agenda',
@@ -477,56 +614,33 @@ export class ZernioService {
   private detectCommercialIntent(text: string): boolean {
     if (!text) return false;
     const lower = text.toLowerCase();
-    const keywords = ['precio', 'precios', 'costo', 'cotizar', 'cotización', 'cotizacion', 'comprar', 'catalogo', 'catálogo', 'stock'];
+    const keywords = ['precio', 'precios', 'costo', 'cotizar', 'cotizaciÃƒÆ’Ã‚Â³n', 'cotizacion', 'comprar', 'catalogo', 'catÃƒÆ’Ã‚Â¡logo', 'stock'];
     return keywords.some((kw) => lower.includes(kw));
   }
 
-  async handleIncomingWebhook(tenantId: string, body: any, headers?: any) {
+  async handleIncomingWebhook(tenantId: string | undefined, body: any, headers?: IncomingWebhookHeaders) {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
     const tenantClient = this.prisma.getTenantClient(effectiveTenantId);
 
-    // 1. Extraer datos del mensaje
-    let senderPhone = '';
-    let text = '';
-    let mediaUrl: string | null = null;
-    let contactName: string | null = null;
-    let externalMessageId = `zernio_in_${Date.now()}`;
-
-    if (body.object === 'page' && body.entry?.[0]?.messaging?.[0]) {
-      const msgEvent = body.entry[0].messaging[0];
-      senderPhone = msgEvent.sender?.id || '';
-      text = msgEvent.message?.text || '';
-      externalMessageId = msgEvent.message?.mid || externalMessageId;
-    } else {
-      senderPhone = String(
-        body.telefono ||
-          body.phone ||
-          body.from ||
-          body.contactoId ||
-          body.sender ||
-          body.messages?.[0]?.from ||
-          '',
-      );
-      text =
-        body.mensaje ||
-        body.message ||
-        body.text ||
-        body.messages?.[0]?.text?.body ||
-        body.messages?.[0]?.body ||
-        '';
-      mediaUrl = body.mediaUrl || body.attachments?.[0]?.payload?.url || body.media?.[0]?.url || null;
-      contactName =
-        body.contactName ||
-        body.name ||
-        body.contacts?.[0]?.profile?.name ||
-        body.contact?.name ||
-        null;
-      externalMessageId = body.id || body.messageId || body.messages?.[0]?.id || externalMessageId;
+    // 1. Extraer datos del mensaje (Zernio message.received + compatibilidad legacy)
+    if (headers?.event && !['message.received', 'webhook.test'].includes(headers.event)) {
+      return { success: true, ignored: true, event: headers.event };
     }
 
+    if (body?.metadata?.standby === true) {
+      this.logger.log('Webhook Zernio en standby ignorado para no tomar control del Meta Business Agent.');
+      return { success: true, ignored: true, reason: 'standby' };
+    }
+
+    const incoming = this.extractIncomingMessage(body, headers);
+    const senderPhone = incoming.senderPhone;
+    const text = incoming.text;
+    const mediaUrl = incoming.mediaUrl;
+    const contactName = incoming.contactName;
+    const externalMessageId = incoming.externalMessageId;
     if (!senderPhone && !text) {
       this.logger.warn(`Webhook Zernio recibido sin remitente ni texto reconocible: ${JSON.stringify(body)}`);
-      return { success: false, message: 'Payload vacío o no reconocido' };
+      return { success: false, message: 'Payload vacÃƒÆ’Ã‚Â­o o no reconocido' };
     }
 
     // 2. Buscar si el contacto existe como Customer o Lead
@@ -545,7 +659,7 @@ export class ZernioService {
       },
     });
 
-    // Si no existe, crear un Lead automáticamente (fuente WHATSAPP_ZERNIO)
+    // Si no existe, crear un Lead automÃƒÆ’Ã‚Â¡ticamente (fuente WHATSAPP_ZERNIO)
     if (!customer && !lead) {
       const leadCount = await tenantClient.lead.count();
       const code = `LEAD-${(leadCount + 1).toString().padStart(3, '0')}`;
@@ -571,7 +685,7 @@ export class ZernioService {
             canal: LeadTouchpointCanal.WHATSAPP,
             fecha: new Date(),
             participanteExterno: name,
-            resumen: text || 'Primer contacto recibido vía WhatsApp / Zernio',
+            resumen: text || 'Primer contacto recibido vÃƒÆ’Ã‚Â­a WhatsApp / Zernio',
             etapa: LeadStage.CONTACTO_INICIAL,
           },
         });
@@ -580,7 +694,7 @@ export class ZernioService {
       }
     }
 
-    // 3. Buscar o crear la conversación
+    // 3. Buscar o crear la conversaciÃƒÆ’Ã‚Â³n
     let conversation = await tenantClient.conversation.findFirst({
       where: {
         tenantId: effectiveTenantId,
@@ -634,7 +748,7 @@ export class ZernioService {
       },
     });
 
-    // 5. Agendar automáticamente si hay intención
+    // 5. Agendar automÃƒÆ’Ã‚Â¡ticamente si hay intenciÃƒÆ’Ã‚Â³n
     let activityScheduled = false;
     let createdActivityId: string | null = null;
 
@@ -647,12 +761,12 @@ export class ZernioService {
         }
 
         if (responsableId) {
-          const fechaReunion = new Date(Date.now() + 24 * 60 * 60 * 1000); // Mañana
+          const fechaReunion = new Date(Date.now() + 24 * 60 * 60 * 1000); // MaÃƒÆ’Ã‚Â±ana
           const act = await tenantClient.activity.create({
             data: {
               tenantId: effectiveTenantId,
               tipo: ActivityType.REUNION,
-              titulo: 'Reunión solicitada por WhatsApp',
+              titulo: 'Reuni\u00f3n solicitada por WhatsApp',
               descripcion: text,
               fecha: fechaReunion,
               hora: '10:00',
@@ -664,21 +778,21 @@ export class ZernioService {
           });
           activityScheduled = true;
           createdActivityId = act.id;
-          this.logger.log(`Actividad ${act.id} agendada automáticamente desde mensaje WhatsApp de ${senderPhone}`);
+          this.logger.log(`Actividad ${act.id} agendada automÃƒÆ’Ã‚Â¡ticamente desde mensaje WhatsApp de ${senderPhone}`);
         }
       } catch (err: any) {
         this.logger.warn(`Error agendando actividad: ${err.message}`);
       }
     }
 
-    // 6. Generar respuesta con Agente IA si no está en modo HUMANO
+    // 6. Generar respuesta con Agente IA si no estÃƒÆ’Ã‚Â¡ en modo HUMANO
     let replySent = false;
     let aiReplyText = '';
 
     if (conversation.modo !== 'HUMANO') {
       try {
         if (activityScheduled) {
-          aiReplyText = '¡Perfecto! He registrado tu solicitud para agendar la reunión para mañana a las 10:00. Un asesor comercial te confirmará los detalles en breve.';
+          aiReplyText = 'Ãƒâ€šÃ‚Â¡Perfecto! He registrado tu solicitud para agendar la reuniÃƒÆ’Ã‚Â³n para maÃƒÆ’Ã‚Â±ana a las 10:00. Un asesor comercial te confirmarÃƒÆ’Ã‚Â¡ los detalles en breve.';
         } else {
           const aiResponse = await this.aiChat.getChatResponse(effectiveTenantId, text, conversation.id, {
             userName: conversation.nombreContacto || 'Cliente',
@@ -695,6 +809,8 @@ export class ZernioService {
               telefono: senderPhone,
               mensaje: aiReplyText,
               conversationId: conversation.id,
+              zernioConversationId: incoming.zernioConversationId,
+              zernioAccountId: incoming.zernioAccountId,
             },
             'BOT',
           );
@@ -702,8 +818,8 @@ export class ZernioService {
         }
       } catch (err: any) {
         this.logger.error(`Error generando respuesta IA: ${err.message}`);
-        // Fallback cortés
-        const fallbackText = 'Gracias por comunicarte con nosotros. Hemos recibido tu mensaje y un asesor se contactará contigo a la brevedad.';
+        // Fallback cortÃƒÆ’Ã‚Â©s
+        const fallbackText = 'Gracias por comunicarte con nosotros. Hemos recibido tu mensaje y un asesor se contactarÃƒÆ’Ã‚Â¡ contigo a la brevedad.';
         await this.sendMessage(
           effectiveTenantId,
           {

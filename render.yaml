@@ -8,7 +8,8 @@ services:
     plan: free
     region: oregon
     buildCommand: npm ci --legacy-peer-deps --include=dev && npx prisma generate && npm run build
-    startCommand: npm run start:prod
+    preDeployCommand: npx prisma migrate deploy
+    startCommand: npx prisma migrate deploy && npm run start:prod
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -27,4 +28,6 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: ZERNIO_API_KEY
+        sync: false
+      - key: ZERNIO_WEBHOOK_SECRET
         sync: false

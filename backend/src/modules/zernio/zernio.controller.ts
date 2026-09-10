@@ -38,7 +38,7 @@ export class ZernioController {
   }
 
   // ----------------------------------------------------
-  // ENPOINTS PROTEGIDOS: CONFIGURACIÓN
+  // ENDPOINTS PROTEGIDOS: CONFIGURACIÓN
   // ----------------------------------------------------
   @Get('config')
   @UseGuards(JwtAuthGuard)
@@ -95,7 +95,7 @@ export class ZernioController {
   }
 
   // ----------------------------------------------------
-  // ENPOINTS DE ENVÍO Y PUBLICACIÓN
+  // ENDPOINTS DE ENVÍO Y PUBLICACIÓN
   // ----------------------------------------------------
   @Post('send')
   @UseGuards(JwtAuthGuard)
@@ -141,10 +141,22 @@ export class ZernioController {
     @Body() body: any,
     @Headers('x-tenant-id') headerTenantId?: string,
     @Headers('x-zernio-signature') signature?: string,
+    @Headers('x-late-signature') lateSignature?: string,
+    @Headers('x-zernio-event') event?: string,
+    @Headers('x-zernio-event-id') eventId?: string,
+    @Headers('x-late-event-id') lateEventId?: string,
     @Query('tenant_id') queryTenantId?: string,
     @Req() req?: any,
   ) {
-    const tenantId = this.extractTenantId(req, headerTenantId, queryTenantId || body?.tenantId);
-    return this.zernioService.handleIncomingWebhook(tenantId, body, { signature });
+    const tenantId = this.extractTenantId(req, headerTenantId, queryTenantId || body?.tenantId || body?.tenant_id);
+    const webhookHeaders = {
+      signature: signature || lateSignature,
+      event: event || body?.event,
+      eventId: eventId || lateEventId || body?.id,
+      tenantId,
+    };
+
+    this.zernioService.verifyIncomingWebhookSignature(req, body, webhookHeaders);
+    return this.zernioService.handleIncomingWebhook(tenantId, body, webhookHeaders);
   }
 }

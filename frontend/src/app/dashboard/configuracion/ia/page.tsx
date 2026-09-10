@@ -128,8 +128,12 @@ export default function AiConfigPage() {
         setConfig(prev => ({
           ...prev,
           ...data,
-          apiKey: data.apiKey ? '****************' : '',
+          apiKey: data.apiKey === '****ERROR' ? '' : data.apiKey ? '****************' : '',
         }));
+
+        if (data.apiKeyError) {
+          showNotification('error', data.apiKeyError);
+        }
 
         if (!isKnownModel && incomingModel) {
           setCustomModelMode(true);
@@ -578,3 +582,4 @@ export default function AiConfigPage() {
     </div>
   );
 }
+

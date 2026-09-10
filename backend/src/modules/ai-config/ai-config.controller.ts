@@ -31,9 +31,15 @@ export class AiConfigController {
     return this.aiConfigService.testConnection(tenantId);
   }
 
+  @Delete('api-key')
+  async clearApiKey(@Headers('x-tenant-id') tenantId: string) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
+    return this.aiConfigService.clearApiKey(tenantId);
+  }
   @Delete()
   async resetConfig(@Headers('x-tenant-id') tenantId: string) {
     if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
     return this.aiConfigService.resetConfig(tenantId);
   }
 }
+

@@ -50,16 +50,16 @@ export class AiConfigService {
     }
 
     let maskedApiKey = null;
+    let apiKeyDecryptError = false;
     if (config.apiKey) {
-      try {
-        const decrypted = this.encryption.decrypt(config.apiKey);
-        if (decrypted && decrypted.length >= 4) {
-          maskedApiKey = `****${decrypted.slice(-4)}`;
-        } else if (decrypted) {
-          maskedApiKey = `****`;
-        }
-      } catch (e) {
+      const decrypted = this.encryption.tryDecrypt(config.apiKey, 'API Key de OpenRouter de IA');
+      if (decrypted && decrypted.length >= 4) {
+        maskedApiKey = `****${decrypted.slice(-4)}`;
+      } else if (decrypted) {
+        maskedApiKey = '****';
+      } else {
         maskedApiKey = '****ERROR';
+        apiKeyDecryptError = true;
       }
     }
 
@@ -72,8 +72,9 @@ export class AiConfigService {
       instruccionesInternas,
       tono,
       idioma,
-      estado: config.apiKey ? 'CONECTADO' : 'SIN_CONFIGURAR',
+      estado: apiKeyDecryptError ? 'ERROR' : config.apiKey ? 'CONECTADO' : 'SIN_CONFIGURAR',
       apiKey: maskedApiKey,
+      apiKeyError: apiKeyDecryptError ? 'La API Key no pudo descifrarse. Vuelve a guardarla en Configuraci\u00f3n \u2192 IA' : null,
     };
   }
 
@@ -83,14 +84,16 @@ export class AiConfigService {
       where: { tenantId },
     });
 
-    if (dto.habilitada) {
-      const hasKeyInDb = config?.apiKey != null && config?.apiKey !== '';
-      const providesNewKey = dto.apiKey != null && dto.apiKey.trim() !== '';
-      if (!hasKeyInDb && !providesNewKey) {
-        throw new BadRequestException('Se requiere una API Key para habilitar la IA.');
-      }
-    }
+    const incomingApiKey = dto.apiKey?.trim();
+    const providesNewKey = Boolean(incomingApiKey && !incomingApiKey.startsWith('****'));
+    const existingApiKey = config?.apiKey
+      ? this.encryption.tryDecrypt(config.apiKey, 'API Key de OpenRouter de IA')
+      : null;
+    const hasUsableKey = Boolean(existingApiKey || providesNewKey);
 
+    if (dto.habilitada && !hasUsableKey) {
+      throw new BadRequestException('La API Key no pudo descifrarse. Vuelve a guardarla en Configuraci\u00f3n \u2192 IA');
+    }
     // Preserve existing systemPrompt subfields if not explicitly passed
     let currentParsed: any = {};
     if (config?.systemPrompt) {
@@ -119,10 +122,13 @@ export class AiConfigService {
       systemPrompt: JSON.stringify(systemPromptObj),
     };
 
-    if (dto.apiKey && dto.apiKey.trim() !== '') {
-      dataToSave.apiKey = this.encryption.encrypt(dto.apiKey.trim());
+    if (incomingApiKey !== undefined) {
+      if (!incomingApiKey) {
+        dataToSave.apiKey = null;
+      } else if (!incomingApiKey.startsWith('****')) {
+        dataToSave.apiKey = this.encryption.encrypt(incomingApiKey);
+      }
     }
-
     if (config) {
       return tenantClient.aIConfiguration.update({
         where: { tenantId },
@@ -130,9 +136,6 @@ export class AiConfigService {
       });
     } else {
       dataToSave.tenantId = tenantId;
-      if (!dataToSave.apiKey) {
-        dataToSave.apiKey = this.encryption.encrypt('sk-or-v1-initial-placeholder');
-      }
       return tenantClient.aIConfiguration.create({
         data: dataToSave,
       });
@@ -147,11 +150,9 @@ export class AiConfigService {
       throw new BadRequestException('No hay una configuración o API Key válida para probar.');
     }
 
-    let decryptedKey: string;
-    try {
-      decryptedKey = this.encryption.decrypt(config.apiKey);
-    } catch (e) {
-      throw new InternalServerErrorException('No se pudo descifrar la API Key.');
+    const decryptedKey = this.encryption.tryDecrypt(config.apiKey, 'API Key de OpenRouter de IA');
+    if (!decryptedKey) {
+      throw new BadRequestException('La API Key no pudo descifrarse. Vuelve a guardarla en Configuraci\u00f3n \u2192 IA');
     }
 
     try {
@@ -171,6 +172,15 @@ export class AiConfigService {
     }
   }
 
+  async clearApiKey(tenantId: string) {
+    const tenantClient = this.prisma.getTenantClient(tenantId);
+    await tenantClient.aIConfiguration.updateMany({
+      where: { tenantId },
+      data: { apiKey: null, habilitada: false },
+    });
+    return { success: true, message: 'API Key de IA limpiada. Vuelve a guardarla en Configuraci\u00f3n \u2192 IA.' };
+  }
+
   async resetConfig(tenantId: string) {
     const tenantClient = this.prisma.getTenantClient(tenantId);
     const config = await tenantClient.aIConfiguration.findUnique({ where: { tenantId } });
@@ -182,3 +192,8 @@ export class AiConfigService {
     return { success: true, message: 'Configuración restablecida con éxito' };
   }
 }
+
+
+
+
+

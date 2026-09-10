@@ -732,7 +732,7 @@ model AIConfiguration {
   tenantId     String   @unique @db.Uuid
   habilitada   Boolean  @default(true)
   provider     String   @default("openrouter")
-  apiKey       String
+  apiKey       String?
   defaultModel String   @default("openai/gpt-4o-mini")
   maxTokens    Int      @default(1000)
   temperature  Decimal  @default(0.7) @db.Decimal(3, 2)
@@ -1503,5 +1503,7 @@ model CampaignEvent {
   @@index([campaignId])
   @@index([recipientId])
 }
+
+
 
 

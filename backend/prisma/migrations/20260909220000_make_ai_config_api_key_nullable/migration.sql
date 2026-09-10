@@ -1,0 +1,2 @@
+ALTER TABLE "AIConfiguration"
+ALTER COLUMN "apiKey" DROP NOT NULL;

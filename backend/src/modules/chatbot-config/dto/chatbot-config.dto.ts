@@ -90,6 +90,10 @@ export class ChatbotConfigDto {
   @IsOptional()
   modeloOpenRouter?: string;
 
+  @IsString()
+  @IsOptional()
+  modelo?: string;
+
   @IsInt()
   @Min(100)
   @Max(8000)

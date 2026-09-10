@@ -1,11 +1,9 @@
-import { Controller, Get, Put, Body, Post, Patch, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Body, Post, Patch, Delete, Headers, UseGuards, BadRequestException } from '@nestjs/common';
 import { ChatbotConfigService } from './chatbot-config.service.js';
 import { ChatbotConfigDto } from './dto/chatbot-config.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
-import { TenantId } from '../../common/decorators/tenant-id.decorator.js';
-import { UserId } from '../../common/decorators/user-id.decorator.js';
 
 @Controller('chatbot-config')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,49 +12,55 @@ export class ChatbotConfigController {
 
   @Get()
   @Roles('Admin', 'Gerente')
-  getConfig(@TenantId() tenantId: string) {
+  getConfig(@Headers('x-tenant-id') tenantId: string) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
     return this.chatbotConfigService.getConfig(tenantId);
   }
 
   @Put()
   @Roles('Admin', 'Gerente')
   updateConfig(
-    @TenantId() tenantId: string,
-    @UserId() userId: string,
+    @Headers('x-tenant-id') tenantId: string,
+    @Headers('x-user-id') userId: string,
     @Body() dto: ChatbotConfigDto
   ) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
     return this.chatbotConfigService.updateConfig(tenantId, userId, dto);
   }
 
   @Post('test-connection')
   @Roles('Admin', 'Gerente')
-  testConnection(@TenantId() tenantId: string) {
-    return this.chatbotConfigService.testConnection(tenantId);
+  testConnection(@Headers('x-tenant-id') tenantId: string, @Body() dto?: ChatbotConfigDto) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
+    return this.chatbotConfigService.testConnection(tenantId, dto);
   }
 
   @Post('test')
   @Roles('Admin', 'Gerente')
   testChatbot(
-    @TenantId() tenantId: string,
-    @UserId() userId: string,
+    @Headers('x-tenant-id') tenantId: string,
+    @Headers('x-user-id') userId: string,
     @Body('mensaje') mensaje: string
   ) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
     return this.chatbotConfigService.testChatbot(tenantId, userId, mensaje);
   }
 
   @Patch('activate')
   @Roles('Admin', 'Gerente')
   activate(
-    @TenantId() tenantId: string,
-    @UserId() userId: string,
+    @Headers('x-tenant-id') tenantId: string,
+    @Headers('x-user-id') userId: string,
     @Body('activo') activo: boolean
   ) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
     return this.chatbotConfigService.activate(tenantId, userId, activo);
   }
 
   @Delete()
   @Roles('Admin', 'Gerente')
-  reset(@TenantId() tenantId: string, @UserId() userId: string) {
+  reset(@Headers('x-tenant-id') tenantId: string, @Headers('x-user-id') userId: string) {
+    if (!tenantId) throw new BadRequestException('x-tenant-id es requerido');
     return this.chatbotConfigService.reset(tenantId, userId);
   }
 }

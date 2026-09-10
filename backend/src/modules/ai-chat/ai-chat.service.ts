@@ -16,16 +16,18 @@ export class AiChatService {
     private readonly aiUsageService: AiUsageService,
   ) {}
 
-  async createConversation(tenantId: string, usuarioId: string, titulo?: string) {
+  async createConversation(tenantId: string, usuarioId: string | undefined, titulo?: string) {
     const tenantClient = this.prisma.getTenantClient(tenantId);
     const title = titulo?.trim() || 'Nueva conversación';
+    const validUsuarioId = this.isUuid(usuarioId) ? usuarioId : null;
+    const contactPrefix = validUsuarioId ? `user_${validUsuarioId}` : 'chatbot_test';
     const conv = await tenantClient.conversation.create({
       data: {
         tenantId,
         canal: 'INTERNO',
-        contactoId: `user_${usuarioId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        contactoId: `${contactPrefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         nombreContacto: title,
-        asesorId: usuarioId,
+        asesorId: validUsuarioId,
         modo: 'IA',
         estado: 'ABIERTA',
       }
@@ -138,11 +140,9 @@ export class AiChatService {
     });
     if (!conv) throw new NotFoundException('Conversación inválida');
 
-    let apiKey = '';
-    try {
-      apiKey = this.encryption.decrypt(aiConfig.apiKey);
-    } catch {
-      throw new InternalServerErrorException('Error descifrando la API Key de OpenRouter');
+    const apiKey = this.encryption.tryDecrypt(aiConfig.apiKey, 'API Key de OpenRouter de IA');
+    if (!apiKey) {
+      throw new BadRequestException('La API Key no pudo descifrarse. Vuelve a guardarla en Configuraci\u00f3n \u2192 IA');
     }
 
     // Guardar mensaje del usuario
@@ -421,16 +421,16 @@ export class AiChatService {
 
     if (!conv) throw new NotFoundException('Conversación inválida');
 
-    const encryptedKey = chatbotConfig.apiKey || aiConfig?.apiKey;
-    if (!encryptedKey) {
-      throw new BadRequestException('No hay API Key de OpenRouter configurada para el chatbot.');
-    }
+    const chatbotOverrideKey = chatbotConfig.apiKey
+      ? this.encryption.tryDecrypt(chatbotConfig.apiKey, 'API Key de OpenRouter del chatbot')
+      : null;
+    const inheritedAiKey = aiConfig?.apiKey
+      ? this.encryption.tryDecrypt(aiConfig.apiKey, 'API Key de OpenRouter de IA')
+      : null;
+    const apiKey = chatbotOverrideKey || inheritedAiKey;
 
-    let apiKey = '';
-    try {
-      apiKey = this.encryption.decrypt(encryptedKey);
-    } catch {
-      throw new InternalServerErrorException('Error descifrando la API Key de OpenRouter del chatbot');
+    if (!apiKey) {
+      throw new BadRequestException('La API Key no pudo descifrarse. Vuelve a guardarla en Configuraci\u00f3n \u2192 IA');
     }
 
     const messages: any[] = [];
@@ -481,7 +481,7 @@ export class AiChatService {
     let totalTokens = 0;
     let iteration = 0;
     const maxIterations = 3;
-    const model = this.normalizeOpenRouterModel(chatbotConfig.modeloOpenRouter || aiConfig?.defaultModel || 'openai/gpt-4o-mini');
+    const model = this.normalizeOpenRouterModel(this.resolveChatbotModel(chatbotConfig, aiConfig));
 
     try {
       while (iteration < maxIterations) {
@@ -566,7 +566,21 @@ export class AiChatService {
     }
   }
 
+  private isUuid(value?: string | null) {
+    return Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+  }
+
+  private resolveChatbotModel(chatbotConfig: any, aiConfig: any) {
+    const chatbotModel = chatbotConfig?.modeloOpenRouter?.trim();
+    if (chatbotModel && chatbotModel !== 'openai/gpt-4o-mini') return chatbotModel;
+    return aiConfig?.defaultModel || aiConfig?.modelo || chatbotModel || 'openai/gpt-4o-mini';
+  }
+
   private normalizeOpenRouterModel(model: string) {
     return model === 'free-models-router' ? 'openrouter/auto' : model;
   }
 }
+
+
+
+

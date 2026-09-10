@@ -20,4 +20,12 @@ export class SendZernioMessageDto {
   @IsOptional()
   @IsString()
   mediaUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  zernioConversationId?: string;
+
+  @IsOptional()
+  @IsString()
+  zernioAccountId?: string;
 }
