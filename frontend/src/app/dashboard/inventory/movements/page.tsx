@@ -17,7 +17,8 @@ export default function MovementsListPage() {
     setLoading(true);
     try {
       const res = await fetch(`${getApiUrl()}/inventory/movements?page=1&limit=50`, {
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(),
+        cache: 'no-store'
       });
       const data = await res.json();
       setMovements(data.data || []);

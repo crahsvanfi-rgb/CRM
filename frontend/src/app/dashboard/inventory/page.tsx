@@ -55,7 +55,7 @@ export default function InventorySummaryPage() {
       if (search) url.searchParams.append('search', search);
       if (stockBajo) url.searchParams.append('stockBajo', 'true');
 
-      const res = await fetch(url.toString(), { headers });
+      const res = await fetch(url.toString(), { headers, cache: 'no-store' });
       if (!res.ok) throw new Error('Error al cargar inventario');
 
       const data = await res.json();

@@ -23,12 +23,12 @@ export default function ProductInventoryPage() {
   }, [productId]);
 
   const fetchStock = async () => {
-    const res = await fetch(`${getApiUrl()}/inventory/stock/${productId}`, { headers: getAuthHeaders() });
+    const res = await fetch(`${getApiUrl()}/inventory/stock/${productId}`, { headers: getAuthHeaders(), cache: 'no-store' });
     setStock(await res.json());
   };
 
   const fetchMovements = async () => {
-    const res = await fetch(`${getApiUrl()}/inventory/movements?productId=${productId}&limit=20`, { headers: getAuthHeaders() });
+    const res = await fetch(`${getApiUrl()}/inventory/movements?productId=${productId}&limit=20`, { headers: getAuthHeaders(), cache: 'no-store' });
     const data = await res.json();
     setMovements(data.data);
   };
