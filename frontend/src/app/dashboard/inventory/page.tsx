@@ -59,7 +59,19 @@ export default function InventorySummaryPage() {
       if (!res.ok) throw new Error('Error al cargar inventario');
 
       const data = await res.json();
-      setProducts(data.data || []);
+      console.log('Stock response:', JSON.stringify(data));
+      const rows = data.data || data.products || data.items || [];
+      const normalizedProducts = rows.map((p: any) => ({
+        ...p,
+        stock: {
+          fisico: p.stock?.fisico ?? p.stockFisico ?? p.productStock?.stockFisico ?? 0,
+          reservado: p.stock?.reservado ?? p.stockReservado ?? p.productStock?.stockReservado ?? 0,
+          disponible: p.stock?.disponible ?? ((p.stock?.fisico ?? p.stockFisico ?? p.productStock?.stockFisico ?? 0) - (p.stock?.reservado ?? p.stockReservado ?? p.productStock?.stockReservado ?? 0)),
+          transito: p.stock?.transito ?? p.stockTransito ?? p.productStock?.stockTransito ?? 0,
+        },
+      }));
+      normalizedProducts.forEach((p: any) => console.log('Producto mapeado:', { nombre: p.nombre, fisico: p.stock.fisico }));
+      setProducts(normalizedProducts);
     } catch (error) {
       console.error('Error fetching inventory:', error);
     } finally {

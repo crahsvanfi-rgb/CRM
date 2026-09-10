@@ -14,9 +14,9 @@ export function getAuthCredentials() {
   }
 
   // Ensure localStorage is initialized with valid database tenant/user IDs
-  let tenantId = localStorage.getItem('tenant_id') || localStorage.getItem('tenantId');
-  if (!tenantId || tenantId === '12345678-1234-1234-1234-123456789012' || tenantId === '00000000-0000-0000-0000-000000000000') {
-    tenantId = DEFAULT_TENANT_ID;
+  // Esta instalación trabaja con un único tenant; evita reutilizar un tenant antiguo del navegador.
+  let tenantId = DEFAULT_TENANT_ID;
+  if (localStorage.getItem('tenant_id') !== DEFAULT_TENANT_ID || localStorage.getItem('tenantId') !== DEFAULT_TENANT_ID) {
     localStorage.setItem('tenant_id', DEFAULT_TENANT_ID);
     localStorage.setItem('tenantId', DEFAULT_TENANT_ID);
   }
