@@ -264,4 +264,41 @@ describe('ZernioService', () => {
       expect(res.replySent).toBe(true);
     });
   });
-});
+
+  describe('verifyIncomingWebhookSignature', () => {
+    const originalEnv = process.env;
+
+    beforeEach(() => {
+      process.env = { ...originalEnv, ZERNIO_WEBHOOK_SECRET: 'test_secret', ZERNIO_WEBHOOK_MODE: 'strict' };
+    });
+
+    it('should accept missing signature in soft mode', () => {
+      process.env.ZERNIO_WEBHOOK_MODE = 'soft';
+      expect(service.verifyIncomingWebhookSignature({ rawBody: Buffer.from('{"ok":true}') }, { ok: true }, { tenantId: mockTenantId })).toBe(true);
+    });
+
+    it('should accept invalid signature in soft mode', () => {
+      process.env.ZERNIO_WEBHOOK_MODE = 'soft';
+      expect(service.verifyIncomingWebhookSignature(
+        { rawBody: Buffer.from('{"ok":true}') },
+        { ok: true },
+        { signature: 'sha256=bad', timestamp: '2026-09-10T12:00:00Z', tenantId: mockTenantId },
+      )).toBe(true);
+    });
+
+    it('should reject invalid signature in strict mode', () => {
+      expect(() => service.verifyIncomingWebhookSignature(
+        { rawBody: Buffer.from('{"ok":true}') },
+        { ok: true },
+        { signature: 'v1=bad', tenantId: mockTenantId },
+      )).toThrow('Firma invalida');
+    });
+
+    it('should accept Authorization Bearer secret fallback', () => {
+      expect(service.verifyIncomingWebhookSignature(
+        { rawBody: Buffer.from('{"ok":true}') },
+        { ok: true },
+        { authorization: 'Bearer test_secret', tenantId: mockTenantId },
+      )).toBe(true);
+    });
+  });});

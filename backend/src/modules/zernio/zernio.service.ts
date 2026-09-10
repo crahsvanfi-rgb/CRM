@@ -33,6 +33,8 @@ type IncomingZernioMessage = {
 
 type IncomingWebhookHeaders = {
   signature?: string;
+  authorization?: string;
+  timestamp?: string;
   event?: string;
   eventId?: string;
   tenantId?: string;
@@ -49,24 +51,35 @@ export class ZernioService {
   ) {}
 
   public verifyIncomingWebhookSignature(req: { rawBody?: Buffer }, body: unknown, headers?: IncomingWebhookHeaders): boolean {
+    const mode = (process.env.ZERNIO_WEBHOOK_MODE || 'strict').trim().toLowerCase();
+    const softMode = mode === 'soft';
+    // ZERNIO_WEBHOOK_MODE=strict (default): requires a valid HMAC signature.
+    // ZERNIO_WEBHOOK_MODE=soft: logs missing/invalid signatures but accepts the webhook while Zernio signing is being aligned.
     const secret = process.env.ZERNIO_WEBHOOK_SECRET || process.env.CERNIO_WEBHOOK_SECRET;
     if (!secret) {
       this.logger.warn('ZERNIO_WEBHOOK_SECRET no esta configurado; el webhook se acepta sin firma. Configuralo en Render para produccion.');
       return true;
     }
 
+    const authorization = headers?.authorization?.trim() || '';
+    if (authorization.toLowerCase().startsWith('bearer ') && authorization.slice(7).trim() === secret) {
+      return true;
+    }
+
     const signature = headers?.signature?.trim();
     if (!signature) {
-      this.logger.warn('Webhook Zernio rechazado: falta X-Zernio-Signature');
+      this.logWebhookSignatureProblem('falta X-Zernio-Signature', headers);
+      if (softMode) return true;
       throw new UnauthorizedException('Firma requerida');
     }
 
     const rawBody = req.rawBody && req.rawBody.length > 0 ? req.rawBody : Buffer.from(JSON.stringify(body));
     const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-    const received = signature.replace(/^sha256=/i, '').replace(/^v1=/i, '').trim().toLowerCase();
+    const received = this.normalizeWebhookSignature(signature);
 
     if (!this.safeCompareHex(received, expected)) {
-      this.logger.warn('Webhook Zernio rechazado: firma invalida');
+      this.logWebhookSignatureProblem('firma invalida', headers);
+      if (softMode) return true;
       throw new UnauthorizedException('Firma invalida');
     }
 
@@ -81,6 +94,26 @@ export class ZernioService {
     } catch {
       return false;
     }
+  }
+
+  private normalizeWebhookSignature(signature: string) {
+    return signature.replace(/^sha256=/i, '').replace(/^v1=/i, '').trim().toLowerCase();
+  }
+
+  private maskSignature(signature?: string) {
+    if (!signature) return 'SIN_FIRMA';
+    const normalized = signature.trim();
+    if (normalized.length <= 12) return normalized;
+    return `${normalized.slice(0, 8)}...${normalized.slice(-4)}`;
+  }
+
+  private logWebhookSignatureProblem(reason: string, headers?: IncomingWebhookHeaders) {
+    this.logger.warn(
+      'Webhook Zernio ' + reason +
+        ' | signature=' + this.maskSignature(headers?.signature) +
+        ' | timestamp=' + (headers?.timestamp || 'SIN_TIMESTAMP') +
+        ' | tenant=' + (headers?.tenantId || 'SIN_TENANT'),
+    );
   }
 
   private normalizePhone(phone: unknown) {
