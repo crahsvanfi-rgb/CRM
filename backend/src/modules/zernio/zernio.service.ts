@@ -93,7 +93,7 @@ export class ZernioService {
     const sender = message?.sender || body?.sender || body?.contact || {};
     const firstAttachment = message?.attachments?.[0] || body?.attachments?.[0] || body?.media?.[0];
     const zernioConversationId = body?.conversation?.id || body?.conversationId || body?.zernioConversationId;
-    const zernioAccountId = body?.account?.accountId || body?.accountId || body?.zernioAccountId;
+    const zernioAccountId = body?.account?.accountId || body?.account?.id || body?.accountId || body?.zernioAccountId;
 
     const textValue =
       message?.text?.body ||
@@ -136,42 +136,43 @@ export class ZernioService {
       externalMessageId: message?.id || message?.messageId || message?.platformMessageId || eventId || `zernio_in_${Date.now()}`,
       zernioConversationId,
       zernioAccountId,
-      zernioProfileId: body?.account?.profileId,
+      zernioProfileId: body?.account?.profileId || body?.account?.profile_id,
     };
   }
 
   private getConfiguredToken(configJson?: any) {
-    let token = configJson?.token || configJson?.apiKey || process.env.ZERNIO_API_KEY || process.env.CERNIO_API_KEY || '';
-    if (token && (configJson?.token || configJson?.apiKey)) {
-      try {
-        token = this.encryption.decrypt(token);
-      } catch {}
+    const envToken = process.env.ZERNIO_API_KEY || process.env.CERNIO_API_KEY || '';
+    const storedToken = configJson?.token || configJson?.apiKey || '';
+
+    if (storedToken) {
+      const decrypted = this.encryption.tryDecrypt(storedToken, 'API Key de Zernio');
+      if (decrypted) return decrypted;
+      this.logger.warn('Token Zernio guardado no pudo descifrarse; se usara ZERNIO_API_KEY/CERNIO_API_KEY de entorno si existe.');
     }
-    return token;
+
+    return envToken;
   }
   public async resolveTenantId(tenantId?: string): Promise<string> {
+    const candidateTenantId = tenantId || process.env.ZERNIO_DEFAULT_TENANT_ID || process.env.DEFAULT_TENANT_ID;
+
     if (
-      tenantId &&
-      tenantId !== '00000000-0000-0000-0000-000000000000' &&
-      tenantId !== 'test-tenant' &&
-      tenantId !== 'test-tenant-id'
+      candidateTenantId &&
+      candidateTenantId !== '00000000-0000-0000-0000-000000000000' &&
+      candidateTenantId !== 'test-tenant' &&
+      candidateTenantId !== 'test-tenant-id'
     ) {
       try {
         if (this.prisma.tenant?.findUnique) {
-          const exists = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-          if (exists) return tenantId;
+          const exists = await this.prisma.tenant.findUnique({ where: { id: candidateTenantId } });
+          if (exists) return candidateTenantId;
         } else {
-          return tenantId;
+          return candidateTenantId;
         }
       } catch {}
     }
-    try {
-      if (this.prisma.tenant?.findFirst) {
-        const defaultTenant = await this.prisma.tenant.findFirst();
-        if (defaultTenant) return defaultTenant.id;
-      }
-    } catch {}
-    return tenantId || '00000000-0000-0000-0000-000000000000';
+
+    this.logger.warn('No se pudo resolver tenant para Zernio. Configura x-tenant-id como custom header o ZERNIO_DEFAULT_TENANT_ID.');
+    return '00000000-0000-0000-0000-000000000000';
   }
 
   // ----------------------------------------------------
@@ -620,7 +621,12 @@ export class ZernioService {
 
   async handleIncomingWebhook(tenantId: string | undefined, body: any, headers?: IncomingWebhookHeaders) {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
+    if (effectiveTenantId === '00000000-0000-0000-0000-000000000000') {
+      this.logger.error('Webhook Zernio recibido sin tenant valido; configura x-tenant-id o ZERNIO_DEFAULT_TENANT_ID.');
+      return { success: false, ignored: true, reason: 'missing_tenant' };
+    }
     const tenantClient = this.prisma.getTenantClient(effectiveTenantId);
+    this.logger.log('Webhook Zernio recibido: event=' + (headers?.event || body?.event || 'unknown') + ' tenant=' + effectiveTenantId);
 
     // 1. Extraer datos del mensaje (Zernio message.received + compatibilidad legacy)
     if (headers?.event && !['message.received', 'webhook.test'].includes(headers.event)) {
@@ -633,14 +639,15 @@ export class ZernioService {
     }
 
     const incoming = this.extractIncomingMessage(body, headers);
+    this.logger.log('Zernio payload extraido: phone=' + (incoming.senderPhone || 'SIN_PHONE') + ' text=' + (incoming.text ? 'SI' : 'NO') + ' conversationId=' + (incoming.zernioConversationId || 'SIN_CONVERSATION') + ' accountId=' + (incoming.zernioAccountId || 'SIN_ACCOUNT'));
     const senderPhone = incoming.senderPhone;
     const text = incoming.text;
     const mediaUrl = incoming.mediaUrl;
     const contactName = incoming.contactName;
     const externalMessageId = incoming.externalMessageId;
-    if (!senderPhone && !text) {
-      this.logger.warn(`Webhook Zernio recibido sin remitente ni texto reconocible: ${JSON.stringify(body)}`);
-      return { success: false, message: 'Payload vacÃƒÆ’Ã‚Â­o o no reconocido' };
+    if (!senderPhone || !text) {
+      this.logger.warn('Webhook Zernio recibido sin remitente o texto reconocible: ' + JSON.stringify(body));
+      return { success: false, message: 'Payload vacio o no reconocido' };
     }
 
     // 2. Buscar si el contacto existe como Customer o Lead

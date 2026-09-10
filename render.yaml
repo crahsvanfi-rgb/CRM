@@ -31,3 +31,5 @@ services:
         sync: false
       - key: ZERNIO_WEBHOOK_SECRET
         sync: false
+      - key: ZERNIO_DEFAULT_TENANT_ID
+        sync: false

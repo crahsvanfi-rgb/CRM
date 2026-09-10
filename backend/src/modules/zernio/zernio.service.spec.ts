@@ -64,6 +64,7 @@ describe('ZernioService', () => {
     encryption = {
       encrypt: vi.fn().mockImplementation((val: string) => `enc_${val}`),
       decrypt: vi.fn().mockImplementation((val: string) => val.replace('enc_', '')),
+      tryDecrypt: vi.fn().mockImplementation((val: string) => val.startsWith('enc_') ? val.replace('enc_', '') : null),
     };
 
     aiChat = {
