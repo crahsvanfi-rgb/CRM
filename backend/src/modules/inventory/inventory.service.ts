@@ -9,6 +9,47 @@ import { ReleaseStockDto } from './dto/release-stock.dto.js';
 export class InventoryService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  private isValidUuid(value?: string): boolean {
+    return Boolean(value && this.uuidRegex.test(value));
+  }
+
+  private normalizeQuantity(value: unknown): number {
+    const cantidad = Number(value);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      throw new BadRequestException('La cantidad debe ser un numero entero positivo.');
+    }
+    return cantidad;
+  }
+
+  private async resolveUserId(tenantId: string, usuarioId?: string, client?: any): Promise<string> {
+    const prismaClient = client || this.prisma.getTenantClient(tenantId);
+
+    if (this.isValidUuid(usuarioId)) {
+      const user = await prismaClient.user.findFirst({
+        where: { id: usuarioId, tenantId, isActive: true },
+        select: { id: true }
+      });
+      if (user) return user.id;
+    }
+
+    const fallbackUser = await prismaClient.user.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true }
+    }) || await prismaClient.user.findFirst({
+      where: { tenantId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true }
+    });
+
+    if (!fallbackUser) {
+      throw new BadRequestException('No existe un usuario valido para registrar el movimiento de inventario.');
+    }
+
+    return fallbackUser.id;
+  }
   private async resolveTenantId(tenantId?: string): Promise<string> {
     if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000000' && tenantId !== 'test-tenant-id') {
       try {
@@ -40,15 +81,18 @@ export class InventoryService {
     // Si pasamos una transacción externa, la usamos para todas las queries de validación también
     const clientToUse = externalTx || tenantClient;
     
+    const cantidad = this.normalizeQuantity(dto.cantidad);
+    const resolvedUsuarioId = await this.resolveUserId(effectiveTenantId, usuarioId, clientToUse);
+
     // Verificamos que el producto exista
-    const product = await clientToUse.product.findUnique({
+    const product = await clientToUse.product.findFirst({
       where: { id: dto.productId, tenantId: effectiveTenantId }
     });
     if (!product) throw new NotFoundException('Producto no encontrado');
 
     // Verificamos explícitamente que el warehouse pertenezca al tenant si se provee
     if (dto.warehouseId) {
-      const warehouse = await clientToUse.warehouse.findUnique({
+      const warehouse = await clientToUse.warehouse.findFirst({
         where: { id: dto.warehouseId, tenantId: effectiveTenantId }
       });
       if (!warehouse) throw new BadRequestException('El almacén especificado no existe o no pertenece a la empresa actual.');
@@ -73,22 +117,22 @@ export class InventoryService {
 
       // 2. Calcular los nuevos saldos dependiendo del tipo de movimiento
       if (dto.tipo === MovementType.ENTRADA_IMPORTACION as any) {
-        stockFisicoPosterior += dto.cantidad;
-        stockTransitoPosterior = Math.max(0, stockTransitoPosterior - dto.cantidad);
+        stockFisicoPosterior += cantidad;
+        stockTransitoPosterior = Math.max(0, stockTransitoPosterior - cantidad);
       } else if ([MovementType.AJUSTE_POSITIVO, MovementType.DEVOLUCION].includes(dto.tipo as any)) {
-        stockFisicoPosterior += dto.cantidad;
+        stockFisicoPosterior += cantidad;
       } else if ([MovementType.SALIDA_VENTA, MovementType.AJUSTE_NEGATIVO].includes(dto.tipo as any)) {
-        stockFisicoPosterior -= dto.cantidad;
+        stockFisicoPosterior -= cantidad;
         if (stockFisicoPosterior < 0) {
           throw new BadRequestException('El movimiento resulta en un stock físico negativo.');
         }
       } else if (dto.tipo === MovementType.RESERVA) {
-        if ((stockFisicoPosterior - stockReservadoPosterior) < dto.cantidad) {
+        if ((stockFisicoPosterior - stockReservadoPosterior) < cantidad) {
           throw new BadRequestException('No hay suficiente stock físico disponible para esta reserva.');
         }
-        stockReservadoPosterior += dto.cantidad;
+        stockReservadoPosterior += cantidad;
       } else if (dto.tipo === MovementType.LIBERACION_RESERVA) {
-        stockReservadoPosterior -= dto.cantidad;
+        stockReservadoPosterior -= cantidad;
         if (stockReservadoPosterior < 0) stockReservadoPosterior = 0;
       }
 
@@ -99,12 +143,12 @@ export class InventoryService {
           productId: dto.productId,
           warehouseId: dto.warehouseId,
           tipo: dto.tipo,
-          cantidad: dto.cantidad,
+          cantidad,
           stockAnterior,
           stockPosterior: stockFisicoPosterior,
           motivo: dto.motivo,
           documentoRef: dto.documentoRef,
-          usuarioId
+          usuarioId: resolvedUsuarioId
         }
       });
 

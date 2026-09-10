@@ -1,9 +1,9 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api-url';
+import { getAuthHeaders } from '@/utils/auth';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { FiX } from 'react-icons/fi';
 
 interface MovementFormModalProps {
@@ -29,17 +29,9 @@ export default function MovementFormModal({ productId, isOpen, onClose, onSucces
     setError('');
     
     try {
-      const { data: session } = await supabase.auth.getSession();
-      const token = session?.session?.access_token;
-      const tenantId = '11111111-1111-1111-1111-111111111111';
-
       const res = await fetch(`${getApiUrl()}/inventory/movements`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'x-tenant-id': tenantId
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           productId,
           tipo,

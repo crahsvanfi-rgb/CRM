@@ -1,6 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api-url';
+import { getAuthHeaders } from '@/utils/auth';
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 
@@ -21,23 +22,27 @@ export default function ProductInventoryPage() {
   }, [productId]);
 
   const fetchStock = async () => {
-    const res = await fetch(`${getApiUrl()}/inventory/stock/${productId}`);
+    const res = await fetch(`${getApiUrl()}/inventory/stock/${productId}`, { headers: getAuthHeaders() });
     setStock(await res.json());
   };
 
   const fetchMovements = async () => {
-    const res = await fetch(`${getApiUrl()}/inventory/movements?productId=${productId}&limit=20`);
+    const res = await fetch(`${getApiUrl()}/inventory/movements?productId=${productId}&limit=20`, { headers: getAuthHeaders() });
     const data = await res.json();
     setMovements(data.data);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await fetch(`${getApiUrl()}/inventory/movements`, {
+    const res = await fetch(`${getApiUrl()}/inventory/movements`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ ...formData, productId, cantidad: Number(formData.cantidad) })
     });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.message || 'Error al guardar movimiento');
+    }
     setShowModal(false);
     fetchStock();
     fetchMovements();

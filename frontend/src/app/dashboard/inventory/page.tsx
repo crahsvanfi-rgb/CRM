@@ -1,6 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api-url';
+import { getAuthHeaders } from '@/utils/auth';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -17,10 +18,8 @@ import {
   DollarSign,
   Layers
 } from 'lucide-react';
-import { createClient } from '@/utils/supabase/client';
 
 export default function InventorySummaryPage() {
-  const supabase = createClient();
 
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,24 +44,11 @@ export default function InventorySummaryPage() {
 
   const apiUrl = getApiUrl();
 
-  const getHeaders = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || localStorage.getItem('token') || '';
-    const tenantId = session?.user?.user_metadata?.tenant_id || localStorage.getItem('tenantId') || '00000000-0000-0000-0000-000000000000';
-    const userId = session?.user?.id || localStorage.getItem('userId') || '00000000-0000-0000-0000-000000000000';
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'x-tenant-id': tenantId,
-      'x-user-id': userId,
-    };
-  };
 
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      const headers = await getHeaders();
+      const headers = getAuthHeaders();
       const url = new URL(`${apiUrl}/inventory/stock-summary`);
       url.searchParams.append('page', '1');
       url.searchParams.append('limit', '50');
@@ -94,7 +80,7 @@ export default function InventorySummaryPage() {
     setSubmitting(true);
 
     try {
-      const headers = await getHeaders();
+      const headers = getAuthHeaders();
 
       const payload: Record<string, any> = {
         nombre: formData.nombre.trim(),

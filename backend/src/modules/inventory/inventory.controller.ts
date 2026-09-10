@@ -15,11 +15,11 @@ export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   private getTenantId(req: any): string {
-    return req.headers['x-tenant-id'] || '00000000-0000-0000-0000-000000000000';
+    return req.headers['x-tenant-id'] || req.user?.tenantId || req.user?.tenant_id || '00000000-0000-0000-0000-000000000000';
   }
 
   private getUserId(req: any): string {
-    return req.headers['x-user-id'] || req.user?.sub || '00000000-0000-0000-0000-000000000000';
+    return req.headers['x-user-id'] || req.user?.userId || req.user?.id || req.user?.sub || '00000000-0000-0000-0000-000000000000';
   }
 
   @Post('movements')
