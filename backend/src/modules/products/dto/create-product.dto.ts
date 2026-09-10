@@ -60,6 +60,12 @@ export class CreateProductDto {
   @Min(0)
   stockMinimo?: number;
 
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : Number(value)))
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  stockInicial?: number;
+
   @IsEnum(ProductStatus)
   @IsOptional()
   estado?: ProductStatus;

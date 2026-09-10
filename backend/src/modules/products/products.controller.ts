@@ -22,7 +22,7 @@ export class ProductsController {
 
   @Post()
   create(@Body() createProductDto: CreateProductDto, @Req() req: any) {
-    return this.productsService.create(createProductDto, this.getTenantId(req));
+    return this.productsService.create(createProductDto, this.getTenantId(req), req.headers['x-user-id'] || req.user?.userId || req.user?.id || req.user?.sub);
   }
 
   @Get()

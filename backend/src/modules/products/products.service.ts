@@ -29,55 +29,38 @@ export class ProductsService {
     return tenantId;
   }
 
-  async create(createProductDto: CreateProductDto, tenantId: string) {
+  async create(createProductDto: CreateProductDto, tenantId: string, usuarioId?: string) {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
     const tenantClient = this.prisma.getTenantClient(effectiveTenantId);
-    
-    // Check or generate SKU
+    const { stockInicial, ...productFields } = createProductDto;
     let sku = (createProductDto.sku || '').trim();
     if (!sku) {
       const count = tenantClient.product?.count ? await tenantClient.product.count() : 0;
       sku = `PROD-${(count + 1).toString().padStart(4, '0')}`;
     }
-
-    const existing = await tenantClient.product.findUnique({
-      where: {
-        tenantId_sku: { tenantId: effectiveTenantId, sku }
-      }
-    });
-
-    if (existing) {
-      throw new ConflictException(`El SKU ${sku} ya existe en este tenant.`);
-    }
-
-    // Check category if provided
+    const existing = await tenantClient.product.findUnique({ where: { tenantId_sku: { tenantId: effectiveTenantId, sku } } });
+    if (existing) throw new ConflictException(`El SKU ${sku} ya existe en este tenant.`);
     let categoriaId = createProductDto.categoriaId || undefined;
     if (categoriaId) {
-      const cat = await tenantClient.category.findUnique({
-        where: { id: categoriaId, tenantId: effectiveTenantId }
-      });
-      if (!cat) {
-        throw new BadRequestException(`La categoría indicada no pertenece a este tenant o no existe.`);
-      }
+      const cat = await tenantClient.category.findUnique({ where: { id: categoriaId, tenantId: effectiveTenantId } });
+      if (!cat) throw new BadRequestException(`La categoría indicada no pertenece a este tenant o no existe.`);
     }
-
     const precioVenta = createProductDto.precioVenta !== undefined ? Number(createProductDto.precioVenta) : 0;
     const costoBase = createProductDto.costoBase !== undefined ? Number(createProductDto.costoBase) : 0;
     const stockMinimo = createProductDto.stockMinimo !== undefined ? Number(createProductDto.stockMinimo) : 0;
-
-    return tenantClient.product.create({
-      data: {
-        ...createProductDto,
-        sku,
-        categoriaId: categoriaId || null,
-        precioVenta,
-        costoBase,
-        stockMinimo,
-        tenantId: effectiveTenantId,
+    const initialStock = stockInicial !== undefined ? Number(stockInicial) : 0;
+    if (!Number.isFinite(initialStock) || initialStock < 0) throw new BadRequestException('El stock inicial no puede ser negativo.');
+    return tenantClient.$transaction(async (tx: any) => {
+      const product = await tx.product.create({ data: { ...productFields, sku, categoriaId: categoriaId || null, precioVenta, costoBase, stockMinimo, tenantId: effectiveTenantId } });
+      if (initialStock > 0) {
+        const user = await tx.user.findFirst({ where: { id: usuarioId, tenantId: effectiveTenantId, isActive: true }, select: { id: true } }) || await tx.user.findFirst({ where: { tenantId: effectiveTenantId }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+        if (!user) throw new BadRequestException('No existe un usuario válido para registrar el stock inicial.');
+        await tx.productStock.create({ data: { tenantId: effectiveTenantId, productId: product.id, stockFisico: initialStock, stockReservado: 0, stockTransito: 0 } });
+        await tx.inventoryMovement.create({ data: { tenantId: effectiveTenantId, productId: product.id, tipo: 'AJUSTE_POSITIVO', cantidad: initialStock, stockAnterior: 0, stockPosterior: initialStock, motivo: 'Stock inicial del producto', usuarioId: user.id } });
       }
+      return product;
     });
   }
-
   async findAll(tenantId: string, page: number = 1, limit: number = 10, search?: string, categoriaId?: string, estado?: any) {
     const effectiveTenantId = await this.resolveTenantId(tenantId);
     const tenantClient = this.prisma.getTenantClient(effectiveTenantId);

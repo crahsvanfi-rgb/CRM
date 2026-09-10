@@ -103,6 +103,7 @@ export default function InventorySummaryPage() {
       if (formData.precioVenta !== '') payload.precioVenta = Number(formData.precioVenta);
       if (formData.costoBase !== '') payload.costoBase = Number(formData.costoBase);
       if (formData.stockMinimo !== '') payload.stockMinimo = Number(formData.stockMinimo);
+      if (formData.stockInicial !== '') payload.stockInicial = Number(formData.stockInicial);
       if (formData.unidad.trim()) payload.unidad = formData.unidad.trim();
       if (formData.descripcion.trim()) payload.descripcion = formData.descripcion.trim();
 
@@ -117,24 +118,6 @@ export default function InventorySummaryPage() {
       if (!res.ok) {
         const msg = Array.isArray(json.message) ? json.message.join(', ') : json.message;
         throw new Error(msg || 'Error al registrar el producto');
-      }
-
-      if (formData.stockInicial !== '' && Number(formData.stockInicial) > 0) {
-        const stockRes = await fetch(`${apiUrl}/inventory/movements`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            productId: json.id,
-            cantidad: Number(formData.stockInicial),
-            tipo: 'AJUSTE_POSITIVO',
-            motivo: 'Stock inicial del producto',
-          }),
-        });
-        const stockJson = await stockRes.json().catch(() => ({}));
-        if (!stockRes.ok) {
-          const msg = Array.isArray(stockJson.message) ? stockJson.message.join(', ') : stockJson.message;
-          throw new Error(msg || 'Producto creado, pero no se pudo registrar el stock inicial');
-        }
       }
 
       setSuccessMessage(`Producto "${json.nombre}" creado exitosamente.`);
