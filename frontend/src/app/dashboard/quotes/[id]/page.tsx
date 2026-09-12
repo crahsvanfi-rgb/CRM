@@ -4,6 +4,7 @@ import { apiPath } from '@/lib/api-url';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { getAuthHeaders } from '@/utils/auth';
 
 export default function QuoteDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -47,7 +48,27 @@ export default function QuoteDetailPage({ params }: { params: { id: string } }) 
   };
 
   const downloadPdf = async () => {
-    window.open(apiPath(`/quotes/${params.id}/pdf`), '_blank');
+    try {
+      const res = await fetch(apiPath(`/quotes/${params.id}/pdf`), {
+        headers: getAuthHeaders(),
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.message || 'No se pudo generar el PDF');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Cotizacion-${quote?.numero || params.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(error.message || 'No se pudo descargar el PDF');
+    }
   };
 
   if (loading) return <div className="p-6">Cargando cotización...</div>;

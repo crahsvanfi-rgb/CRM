@@ -9,6 +9,10 @@ import PDFDocument from 'pdfkit';
 export class QuotesService {
   constructor(private prisma: PrismaService) {}
 
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+
   private async resolveTenantId(tenantId?: string): Promise<string> {
     if (tenantId && tenantId !== '00000000-0000-0000-0000-000000000000' && tenantId !== 'test-tenant' && tenantId !== 'tenant-123') {
       try {
@@ -187,6 +191,9 @@ export class QuotesService {
   }
 
   async findOne(tenantId: string, id: string) {
+    if (!this.isUuid(tenantId)) throw new BadRequestException('El tenantId no es un UUID valido.');
+    if (!this.isUuid(id)) throw new BadRequestException('El ID de la cotizacion no es un UUID valido.');
+
     const tenantClient = this.prisma.getTenantClient(tenantId);
     const quote = await tenantClient.quote.findUnique({
       where: { id, tenantId },
@@ -394,8 +401,13 @@ export class QuotesService {
     const quote = await this.findOne(tenantId, id);
 
     return new Promise((resolve, reject) => {
-      const doc = new PDFDocument({ margin: 50 });
+      const doc = new PDFDocument({ size: 'A4', margin: 42, bufferPages: true });
       const chunks: Buffer[] = [];
+      const navy = '#102A43';
+      const blue = '#1976D2';
+      const muted = '#627D98';
+      const light = '#F0F4F8';
+      const green = '#138A72';
 
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -403,32 +415,74 @@ export class QuotesService {
 
       const customerName = quote.cliente?.nombreComercial || quote.cliente?.razonSocial || 'Sin nombre';
       const vendorName = quote.vendedor?.name || 'Sin vendedor';
+      const money = (value: any) => `${quote.moneda} ${Number(value || 0).toFixed(2)}`;
+      const date = quote.fecha ? new Date(quote.fecha).toLocaleDateString('es-BO') : new Date().toLocaleDateString('es-BO');
 
-      doc.fontSize(18).text(`Cotizacion ${quote.numero}`, { underline: true });
-      doc.moveDown();
-      doc.fontSize(10).text(`Fecha: ${quote.fecha.toLocaleDateString()}`);
-      doc.text(`Cliente: ${customerName}`);
-      doc.text(`Vendedor: ${vendorName}`);
-      doc.moveDown();
+      doc.rect(0, 0, doc.page.width, 112).fill(navy);
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(23).text('COTIZACION', 42, 38);
+      doc.font('Helvetica').fontSize(10).fillColor('#D9E2EC').text('Propuesta comercial', 44, 68);
+      doc.font('Helvetica-Bold').fontSize(14).fillColor('#FFFFFF').text(quote.numero, 390, 44, { width: 160, align: 'right' });
+      doc.font('Helvetica').fontSize(9).fillColor('#D9E2EC').text(`Fecha: ${date}`, 390, 68, { width: 160, align: 'right' });
 
-      doc.fontSize(12).text('Items', { underline: true });
-      doc.moveDown(0.5);
+      doc.fillColor(navy).font('Helvetica-Bold').fontSize(10).text('DATOS DE LA COTIZACION', 42, 140);
+      doc.moveTo(42, 157).lineTo(553, 157).lineWidth(1).strokeColor('#D9E2EC').stroke();
+      doc.fillColor(muted).font('Helvetica').fontSize(9).text('CLIENTE', 42, 174);
+      doc.fillColor(navy).font('Helvetica-Bold').fontSize(11).text(customerName, 42, 190, { width: 245 });
+      doc.fillColor(muted).font('Helvetica').fontSize(9).text('VENDEDOR', 310, 174);
+      doc.fillColor(navy).font('Helvetica-Bold').fontSize(11).text(vendorName, 310, 190, { width: 243 });
+      doc.fillColor(muted).font('Helvetica').fontSize(9).text('VALIDEZ', 42, 218);
+      doc.fillColor(navy).font('Helvetica').fontSize(10).text(quote.fechaVencimiento ? new Date(quote.fechaVencimiento).toLocaleDateString('es-BO') : 'No especificada', 42, 234);
+      doc.fillColor(muted).text('MONEDA', 310, 218);
+      doc.fillColor(navy).text(quote.moneda, 310, 234);
+
+      let y = 278;
+      doc.roundedRect(42, y, 511, 28, 4).fill(blue);
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(9);
+      doc.text('PRODUCTO', 54, y + 9, { width: 220 });
+      doc.text('CANT.', 315, y + 9, { width: 48, align: 'right' });
+      doc.text('PRECIO', 375, y + 9, { width: 75, align: 'right' });
+      doc.text('TOTAL', 468, y + 9, { width: 72, align: 'right' });
+      y += 28;
+
       quote.items.forEach((item: any, index: number) => {
-        doc.fontSize(10).text(
-          `${index + 1}. ${item.product?.nombre || 'Producto'} | Cantidad: ${item.cantidad} | Precio: ${quote.moneda} ${Number(item.precioUnitario).toFixed(2)} | Desc.: ${Number(item.descuento || 0).toFixed(2)} | Total: ${quote.moneda} ${Number(item.total).toFixed(2)}`,
-        );
+        if (y > 700) { doc.addPage(); y = 48; }
+        if (index % 2 === 0) doc.rect(42, y, 511, 32).fill(light);
+        doc.fillColor(navy).font('Helvetica').fontSize(9);
+        doc.text(item.product?.nombre || 'Producto', 54, y + 10, { width: 240, ellipsis: true });
+        doc.text(String(item.cantidad), 315, y + 10, { width: 48, align: 'right' });
+        doc.text(money(item.precioUnitario), 375, y + 10, { width: 75, align: 'right' });
+        doc.font('Helvetica-Bold').text(money(item.total), 468, y + 10, { width: 72, align: 'right' });
+        y += 32;
       });
 
-      doc.moveDown();
-      doc.fontSize(11).text(`Subtotal: ${quote.moneda} ${Number(quote.subtotal).toFixed(2)}`, { align: 'right' });
-      doc.fontSize(13).text(`Total: ${quote.moneda} ${Number(quote.total).toFixed(2)}`, { align: 'right' });
+      y += 22;
+      doc.moveTo(335, y).lineTo(553, y).lineWidth(1).strokeColor('#D9E2EC').stroke();
+      y += 18;
+      doc.fillColor(muted).font('Helvetica').fontSize(10).text('Subtotal', 350, y, { width: 100 });
+      doc.fillColor(navy).text(money(quote.subtotal), 465, y, { width: 88, align: 'right' });
+      y += 18;
+      doc.fillColor(muted).text('Descuento', 350, y, { width: 100 });
+      doc.fillColor(navy).text(`- ${money(quote.descuento)}`, 465, y, { width: 88, align: 'right' });
+      y += 18;
+      doc.fillColor(muted).text('Impuestos', 350, y, { width: 100 });
+      doc.fillColor(navy).text(money(quote.impuestos), 465, y, { width: 88, align: 'right' });
+      y += 16;
+      doc.roundedRect(335, y, 218, 38, 4).fill(green);
+      doc.fillColor('#FFFFFF').font('Helvetica-Bold').fontSize(13).text('TOTAL', 350, y + 12);
+      doc.text(money(quote.total), 440, y + 11, { width: 98, align: 'right' });
 
-      if (quote.condiciones) {
-        doc.moveDown();
-        doc.fontSize(12).text('Condiciones:', { underline: true });
-        doc.fontSize(10).text(quote.condiciones);
+      if (quote.observaciones || quote.condiciones) {
+        y += 70;
+        doc.fillColor(navy).font('Helvetica-Bold').fontSize(10).text('NOTAS Y CONDICIONES', 42, y);
+        doc.moveTo(42, y + 17).lineTo(553, y + 17).strokeColor('#D9E2EC').stroke();
+        doc.fillColor(muted).font('Helvetica').fontSize(9).text(quote.observaciones || quote.condiciones || '', 42, y + 28, { width: 511, lineGap: 3 });
       }
 
+      const range = doc.bufferedPageRange();
+      for (let i = range.start; i < range.start + range.count; i++) {
+        doc.switchToPage(i);
+        doc.fillColor(muted).font('Helvetica').fontSize(8).text(`Documento ${quote.numero}  |  Pagina ${i + 1} de ${range.count}`, 42, 800, { width: 511, align: 'center' });
+      }
       doc.end();
     });
   }

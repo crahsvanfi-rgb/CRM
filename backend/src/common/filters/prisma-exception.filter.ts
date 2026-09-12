@@ -23,6 +23,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       } else if (exception.code === 'P2003') {
         status = HttpStatus.BAD_REQUEST;
         message = 'El tenant, usuario o registro relacionado no existe.';
+      } else if (exception.code === 'P2023') {
+        status = HttpStatus.BAD_REQUEST;
+        message = 'El identificador de la cotizacion no tiene un formato valido.';
       } else if (exception.code === 'P2025') {
         status = HttpStatus.NOT_FOUND;
         message = 'Registro no encontrado.';
