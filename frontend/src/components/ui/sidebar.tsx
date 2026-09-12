@@ -15,7 +15,6 @@ import {
   BarChart3,
   Bot,
   MessageSquare,
-  Sparkles,
   Megaphone,
   Filter,
   FileText,
@@ -56,15 +55,14 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { name: "Agente IA", href: "/dashboard/ai", icon: Bot },
       { name: "Conversaciones", href: "/dashboard/conversaciones", icon: MessageSquare },
-      { name: "Uso de Tokens IA", href: "/dashboard/ai-usage", icon: Sparkles },
     ],
   },
   {
-    category: "Marketing",
+    category: "Masivos",
     items: [
-      { name: "Marketing / Campañas", href: "/dashboard/marketing/campaigns/board", icon: Megaphone },
+      { name: "Masivos", href: "/dashboard/masivos", icon: Megaphone },
       { name: "Segmentos", href: "/dashboard/marketing/segments", icon: Filter },
-      { name: "Plantillas", href: "/dashboard/marketing/plantillas", icon: FileText },
+      { name: "Plantillas", href: "/dashboard/masivos/plantillas", icon: FileText },
       { name: "Lista de Exclusión", href: "/dashboard/marketing/no-contactar", icon: UserX },
     ],
   },

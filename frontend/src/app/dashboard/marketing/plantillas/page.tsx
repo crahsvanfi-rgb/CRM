@@ -1,7 +1,7 @@
 'use client';
 
 import { getApiUrl } from '@/lib/api-url';
-
+import { getAuthHeaders } from '@/utils/auth';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Plus, Search, FileText, Copy, Trash2, Edit3, ArrowLeft } from 'lucide-react';
@@ -36,7 +36,7 @@ export default function TemplatesPage() {
       const res = await fetch(`${apiUrl}/campaigns/templates`);
       if (res.ok) {
         const data = await res.json();
-        setTemplates(Array.isArray(data) ? data : []);
+        setTemplates(Array.isArray(data) ? data : data.items || data.data || []);
       }
     } catch (err) {
       console.error('Error al cargar plantillas:', err);
@@ -54,7 +54,7 @@ export default function TemplatesPage() {
     try {
       const res = await fetch(`${apiUrl}/campaigns/templates`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(formData)
       });
       if (res.ok) {
@@ -76,7 +76,7 @@ export default function TemplatesPage() {
     try {
       const res = await fetch(`${apiUrl}/campaigns/templates`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           nombre: `${item.nombre} (Copia)`,
           canal: item.canal || 'WHATSAPP',
@@ -245,7 +245,7 @@ export default function TemplatesPage() {
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-muted-foreground uppercase">Cuerpo del Mensaje</label>
                   <div className="flex gap-1">
-                    {['nombre', 'empresa', 'telefono'].map(v => (
+                    {['nombre', 'empresa', 'telefono', 'ciudad', 'producto', 'precio', 'vendedor'].map(v => (
                       <button
                         key={v}
                         type="button"

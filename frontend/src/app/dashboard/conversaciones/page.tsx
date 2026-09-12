@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { createClient } from '@/utils/supabase/client';
-import { UserPlus, ExternalLink, X, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
+import { UserPlus, ExternalLink, X, Loader2, Sparkles, CheckCircle2, RefreshCw } from 'lucide-react';
 
 export default function ConversationsPage() {
   const supabase = createClient();
@@ -72,6 +72,17 @@ export default function ConversationsPage() {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (!selectedConvId) return;
+    const interval = window.setInterval(() => fetchMessages(selectedConvId), 4000);
+    return () => window.clearInterval(interval);
+  }, [selectedConvId]);
+
+  useEffect(() => {
+    const interval = window.setInterval(fetchConversations, 8000);
+    return () => window.clearInterval(interval);
+  }, [statusFilter]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -86,7 +97,7 @@ export default function ConversationsPage() {
       const res = await fetch(url, { headers });
       if (res.ok) {
         const data = await res.json();
-        setConversations(data.itemás || []);
+        setConversations(data.items || data.data || []);
       }
     } catch (error) {
       console.error('Error fetching conversations:', error);
@@ -102,7 +113,7 @@ export default function ConversationsPage() {
       const res = await fetch(`${apiUrl}/conversations/${id}/messages`, { headers });
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.itemás || []);
+        setMessages(data.items || data.data || []);
       }
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -269,7 +280,7 @@ export default function ConversationsPage() {
       <div className="w-1/3 bg-gray-900/80 border border-gray-800 flex flex-col rounded-2xl shadow-xl overflow-hidden backdrop-blur">
         <div className="p-4 border-b border-gray-800 bg-gray-800/40 flex justify-between itemás-center">
           <div>
-            <h2 className="text-xl font-bold text-white">Bandeja Zernio</h2>
+            <div className="flex items-center gap-2"><h2 className="text-xl font-bold text-white">Conversaciones</h2><RefreshCw size={14} className={loadingList ? "animate-spin text-blue-400" : "text-gray-500"} /></div>
             <p className="text-xs text-gray-400">Mensajes de WhatsApp & Canales</p>
           </div>
           <select
@@ -436,52 +447,52 @@ export default function ConversationsPage() {
               {loadingMessages ? (
                 <div className="p-8 text-center text-gray-500 text-sm">Cargando mensajes...</div>
               ) : (
-                messages.map((másg) => {
-                  const isIncoming = másg.senderType === 'CLIENTE';
+                messages.map((msg) => {
+                  const isIncoming = msg.senderType === 'CLIENTE';
                   return (
-                    <div key={másg.id} className={`flex ${isIncoming ? 'justify-start' : 'justify-end'}`}>
+                    <div key={msg.id} className={`flex ${isIncoming ? 'justify-start' : 'justify-end'}`}>
                       <div
                         className={`max-w-[70%] rounded-2xl p-3.5 shadow-md ${
                           isIncoming
                             ? 'bg-gray-800 border border-gray-700 text-gray-100'
-                            : másg.senderType === 'BOT'
+                            : msg.senderType === 'BOT'
                             ? 'bg-blue-900/40 text-blue-100 border border-blue-800'
                             : 'bg-blue-600 text-white'
                         }`}
                       >
-                        {másg.senderType !== 'CLIENTE' && (
+                        {msg.senderType !== 'CLIENTE' && (
                           <div
                             className={`text-[10px] mb-1 font-bold uppercase tracking-wider ${
-                              másg.senderType === 'BOT' ? 'text-blue-400' : 'text-blue-200'
+                              msg.senderType === 'BOT' ? 'text-blue-400' : 'text-blue-200'
                             }`}
                           >
-                            {másg.senderType === 'BOT' ? '🤖 Asistente IA' : '👤 Vendedor'}
+                            {msg.senderType === 'BOT' ? '🤖 Asistente IA' : '👤 Vendedor'}
                           </div>
                         )}
-                        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{másg.content}</p>
-                        {másg.mediaUrl && (
+                        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{msg.content}</p>
+                        {msg.mediaUrl && (
                           <div className="mt-2">
-                            {másg.messageType === 'IMAGEN' ? (
-                              <img src={másg.mediaUrl} alt="Adjunto" className="max-w-full rounded-lg" />
-                            ) : másg.messageType === 'AUDIO' ? (
+                            {msg.messageType === 'IMAGEN' ? (
+                              <img src={msg.mediaUrl} alt="Adjunto" className="max-w-full rounded-lg" />
+                            ) : msg.messageType === 'AUDIO' ? (
                               <div className="flex flex-col space-y-2 w-64">
-                                <audio controls src={másg.mediaUrl} className="w-full h-10" />
-                                {másg.transcripcionEstado === 'COMPLETADA' && (
+                                <audio controls src={msg.mediaUrl} className="w-full h-10" />
+                                {msg.transcripcionEstado === 'COMPLETADA' && (
                                   <div className="bg-black/30 p-2.5 rounded-lg text-xs italic border-l-2 border-blue-400 text-gray-300">
                                     <span className="font-semibold not-italic block text-[10px] text-gray-400 mb-0.5">
                                       Transcripción:
                                     </span>
-                                    {másg.transcription}
+                                    {msg.transcription}
                                   </div>
                                 )}
-                                {másg.transcripcionEstado === 'PENDIENTE' && (
+                                {msg.transcripcionEstado === 'PENDIENTE' && (
                                   <span className="text-xs text-blue-400 animate-pulse">Transcribiendo...</span>
                                 )}
-                                {másg.transcripcionEstado === 'ERROR' && (
+                                {msg.transcripcionEstado === 'ERROR' && (
                                   <div className="flex itemás-center gap-2">
                                     <span className="text-xs text-red-400">Error al transcribir</span>
                                     <button
-                                      onClick={() => handleRetryTranscription(másg.id)}
+                                      onClick={() => handleRetryTranscription(msg.id)}
                                       className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30"
                                     >
                                       Reintentar
@@ -491,7 +502,7 @@ export default function ConversationsPage() {
                               </div>
                             ) : (
                               <a
-                                href={másg.mediaUrl}
+                                href={msg.mediaUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="underline text-xs text-blue-300"
@@ -506,7 +517,7 @@ export default function ConversationsPage() {
                             isIncoming ? 'text-gray-400' : 'text-blue-200/80'
                           }`}
                         >
-                          {format(new Date(másg.fechaEnvio), 'HH:mm', { locale: es })}
+                          {format(new Date(msg.fechaEnvio), 'HH:mm', { locale: es })}
                         </div>
                       </div>
                     </div>

@@ -87,11 +87,11 @@ export function MobileNav() {
       ],
     },
     {
-      title: 'Marketing & Campañas',
+      title: 'Masivos',
       items: [
-        { name: 'Campañas Masivas', href: '/dashboard/marketing/campaigns', icon: Megaphone, color: 'bg-purple-500' },
+        { name: 'Masivos', href: '/dashboard/masivos', icon: Megaphone, color: 'bg-purple-500' },
         { name: 'Segmentos de Clientes', href: '/dashboard/marketing/segments', icon: Filter, color: 'bg-pink-500' },
-        { name: 'Plantillas de Mensaje', href: '/dashboard/marketing/plantillas', icon: Copy, color: 'bg-sky-500' },
+        { name: 'Plantillas de Mensaje', href: '/dashboard/masivos/plantillas', icon: Copy, color: 'bg-sky-500' },
         { name: 'Lista de Exclusión', href: '/dashboard/marketing/no-contactar', icon: UserX, color: 'bg-red-500' },
       ],
     },
