@@ -102,7 +102,17 @@ export class QuotesService {
       };
     });
 
-    const total = Math.max(0, subtotal - globalDiscount + taxes);
+    if (itemsList.length === 0) {
+      throw new BadRequestException('La cotizacion debe incluir al menos un producto.');
+    }
+    if (subtotal <= 0) {
+      throw new BadRequestException('La cotizacion debe tener un subtotal mayor que cero.');
+    }
+    if (globalDiscount > subtotal) {
+      throw new BadRequestException('El descuento no puede ser mayor que el subtotal.');
+    }
+
+    const total = subtotal - globalDiscount + taxes;
 
     // Generar secuencial de cotización (COT-XXXX)
     const quote = await tenantClient.$transaction(async (tx: any) => {

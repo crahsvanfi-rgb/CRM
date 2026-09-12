@@ -133,6 +133,9 @@ export default function QuoteFormPage() {
       if (formData.impuestos.trim()) payload.impuestos = Number(formData.impuestos);
       if (formData.fechaVencimiento) payload.fechaVencimiento = new Date(formData.fechaVencimiento).toISOString();
 
+      if (items.length === 0) {
+        throw new Error('Agrega al menos un producto a la cotizacion.');
+      }
       const validItems = items
         .filter((i) => i.productId && i.productId.trim() !== '')
         .map((i) => ({
@@ -142,9 +145,17 @@ export default function QuoteFormPage() {
           descuento: Number(i.descuento || 0),
         }));
 
-      if (validItems.length > 0) {
-        payload.items = validItems;
+      if (validItems.length !== items.length) {
+        throw new Error('Selecciona un producto valido en cada item.');
       }
+      if (validItems.some((item) => item.precioUnitario <= 0)) {
+        throw new Error('Cada producto debe tener un precio mayor que cero.');
+      }
+      const subtotal = validItems.reduce((sum, item) => sum + (item.cantidad * item.precioUnitario - item.descuento), 0);
+      if (Number(formData.descuento || 0) > subtotal) {
+        throw new Error('El descuento no puede ser mayor que el subtotal.');
+      }
+      payload.items = validItems;
 
       const res = await fetch(`${apiUrl}/quotes`, {
         method: 'POST',
