@@ -141,6 +141,17 @@ export class LeadsService {
         orderBy: { createdAt: 'desc' },
         include: {
           vendedor: { select: { name: true, email: true } },
+          touchpoints: {
+            orderBy: { fecha: 'desc' },
+            take: 1,
+            select: { id: true, canal: true, fecha: true, resumen: true, compromisosPendientes: true, fechaRecontacto: true, etapa: true },
+          },
+          agendaActivities: {
+            where: { estado: 'PENDIENTE' },
+            orderBy: { fecha: 'asc' },
+            take: 1,
+            select: { id: true, titulo: true, descripcion: true, fecha: true, estado: true },
+          },
           _count: { select: { touchpoints: true, activities: true } },
         },
       }),

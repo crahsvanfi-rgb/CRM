@@ -1,10 +1,10 @@
-﻿'use client';
+'use client';
 
 import { getApiUrl } from '@/lib/api-url';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Plus, Search, Filter } from 'lucide-react';
+import { Plus, Search, Filter, CalendarClock, MessageSquareText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { createClient } from '@/utils/supabase/client';
 import LeadForm from '@/components/leads/LeadForm';
@@ -60,6 +60,21 @@ export default function LeadsPage() {
     return <span className={`px-2 py-1 rounded text-xs font-semibold ${css}`}>{status}</span>;
   };
 
+
+  const getFollowUp = (lead: any) => {
+    const touchpoint = lead.touchpoints?.[0];
+    const activity = lead.agendaActivities?.[0];
+    const nextDate = touchpoint?.fechaRecontacto || lead.proximoSeguimiento || activity?.fecha;
+    const summary = touchpoint?.compromisosPendientes || touchpoint?.resumen || activity?.titulo || activity?.descripcion;
+    if (!nextDate && !summary) return <span className="text-gray-500">Sin seguimiento</span>;
+    return (
+      <div className="min-w-[190px] space-y-1">
+        <div className="flex items-center gap-1.5 text-gray-200"><MessageSquareText size={14} className="text-blue-400 shrink-0" /><span className="truncate max-w-[240px]" title={summary || undefined}>{summary || 'Interaccion registrada'}</span></div>
+        {nextDate && <div className="flex items-center gap-1.5 text-xs text-emerald-400"><CalendarClock size={13} className="shrink-0" /><span>{new Date(nextDate).toLocaleDateString('es-BO', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -101,10 +116,11 @@ export default function LeadsPage() {
           <table className="w-full text-left text-sm text-gray-300">
             <thead className="bg-gray-800/50 text-gray-400 uppercase font-semibold text-xs">
               <tr>
-                <th className="px-6 py-4">CÃƒÂ³digo</th>
+                <th className="px-6 py-4">Codigo</th>
                 <th className="px-6 py-4">Contacto</th>
                 <th className="px-6 py-4">Empresa</th>
-                <th className="px-6 py-4">TelÃƒÂ©fono</th>
+                <th className="px-6 py-4">Telefono</th>
+                <th className="px-6 py-4">Seguimiento</th>
                 <th className="px-6 py-4">Estado</th>
                 <th className="px-6 py-4 text-right">Acciones</th>
               </tr>
@@ -112,13 +128,13 @@ export default function LeadsPage() {
             <tbody className="divide-y divide-gray-800">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                     Cargando leads...
                   </td>
                 </tr>
               ) : leads.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                     No se encontraron leads activos.
                   </td>
                 </tr>
@@ -133,6 +149,7 @@ export default function LeadsPage() {
                   <td className="px-6 py-4 font-medium text-white">{lead.name}</td>
                   <td className="px-6 py-4">{lead.companyName || '-'}</td>
                   <td className="px-6 py-4">{lead.phone || '-'}</td>
+                  <td className="px-6 py-4">{getFollowUp(lead)}</td>
                   <td className="px-6 py-4">{getStatusBadge(lead.estado)}</td>
                   <td className="px-6 py-4 text-right">
                     <Link 
